@@ -39,7 +39,9 @@ const config: Config = {
     [
       'classic',
       {
-        docs: false,
+        docs: {
+          sidebarPath: './sidebars.ts',
+        },
         blog: false,
         theme: {
           customCss: './src/css/custom.css',
@@ -60,7 +62,14 @@ const config: Config = {
         alt: 'My Site Logo',
         src: 'img/logo.svg',
       },
-      items: [],
+      items: [
+        {
+          type: 'docSidebar',
+          sidebarId: 'docsSidebar',
+          position: 'left',
+          label: 'ドキュメント',
+        },
+      ],
     },
     footer: {
       style: 'dark',
