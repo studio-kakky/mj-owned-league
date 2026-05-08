@@ -12,12 +12,18 @@ sidebar_position: 3
 |---|---|---|
 | Group / Player / Ruleset の作成・編集 | ○ | × |
 | League / Match / Game の作成・編集・削除 | ○ | × |
-| Owner 用ダッシュボードへのアクセス | ○ | × |
+| Group ホーム（および Group 配下の管理画面）へのアクセス | ○ | × |
 | 招待の発行・取消（他の Owner を招く） | ○ | × |
 | 公開 URL からの閲覧（成績・順位） | ○ | ○ |
 
 - Owner も自分のリーグを公開 URL から閲覧可能（同じビューを見ながら共有相手と話せるように）。
 - Viewer は URL を知っていれば誰でもアクセスできる。「秘匿」ではなく「推測困難」レベルのアクセス制御（`publicSlug` はランダム文字列）。
+
+## ナビゲーションの基本前提
+
+- Owner 用画面は常に「いずれかの Group が選択されている」状態で動作する。
+- Group の切替はすべての Owner 用画面で共通ヘッダーの **Group セレクタ** から行う。
+- Owner は複数 Group を持ち得るが、「全 Group 横断の俯瞰画面」は MVP では持たない。
 
 ## URL 設計（仮）
 
@@ -27,15 +33,24 @@ sidebar_position: 3
 |---|---|
 | `/login` | ログイン |
 | `/invitations/accept/:token` | 招待受け入れ（新規アカウント作成 / 認証不要） |
-| `/` | Owner ダッシュボード（ログイン後トップ） |
-| `/invitations` | 招待管理 |
-| `/groups` | 自分の Group 一覧 |
-| `/groups/:groupId` | Group 詳細（Player 管理、Ruleset 管理、通算成績） |
-| `/leagues/:leagueId` | League ダッシュボード |
-| `/matches/:matchId` | Match ダッシュボード |
-| `/games/new` | 対局結果入力フォーム |
-| `/games/:gameId/edit` | 対局結果編集 |
-| `/games/:gameId` | 対局詳細 |
+| `/` | 最後に選択した Group のホームへリダイレクト（Group 0 個なら `/groups/new`） |
+| `/invitations` | 招待管理（Owner 単位） |
+| `/groups/new` | Group 作成 |
+| `/groups/:groupId` | Group ホーム（League 一覧・Match 一覧・通算成績などを並置） |
+| `/groups/:groupId/settings` | Group 設定（基本タブ） |
+| `/groups/:groupId/settings/players` | Group 設定（Player 管理タブ） |
+| `/groups/:groupId/settings/rulesets` | Group 設定（Ruleset 管理タブ） |
+| `/groups/:groupId/leagues` | League 一覧 |
+| `/groups/:groupId/leagues/new` | League 作成 |
+| `/groups/:groupId/leagues/:leagueId` | League ダッシュボード |
+| `/groups/:groupId/matches/new` | Match 作成（League 外） |
+| `/groups/:groupId/leagues/:leagueId/matches/new` | Match 作成（League 配下） |
+| `/groups/:groupId/matches/:matchId` | Match ダッシュボード（League 配下・League 外問わず） |
+| `/groups/:groupId/games/new` | 対局結果入力フォーム（クエリで親 Match / League を指定可） |
+| `/groups/:groupId/games/:gameId` | 対局詳細 |
+| `/groups/:groupId/games/:gameId/edit` | 対局結果編集 |
+
+トップレベルの `/leagues/...` `/matches/...` `/games/...` は使用しない。Owner 用機能はすべて `/groups/:groupId/...` 配下にネストする（招待関連を除く）。
 
 ### 公開閲覧（認証不要）
 
@@ -57,46 +72,58 @@ sidebar_position: 3
 
 1. 既存 Owner から招待 URL（`/invitations/accept/:token`）を受け取る
 2. URL を開き、メールアドレス（任意で固定）/ パスワードを設定 → アカウント作成
-3. 自動的にログインし、Group 作成画面に誘導される
+3. 自動的にログインし、`/groups/new`（Group 作成画面）に誘導される
 4. Group 名を入力して作成
 5. Group 作成時、**デフォルト Ruleset** が自動生成される
    - 25000 持ち / 30000 返し / ウマ `UMA_10_30` / 飛び賞なし
-6. Group ページへ遷移
+6. `/groups/:groupId`（Group ホーム）へ遷移
 
 招待されたユーザーは **独立した Owner** として登録される（招待元の Group には自動で参加しない）。
 
-### F2. プレイヤー登録
+### F2. ログイン後の着地
 
-1. Group ページ → 「プレイヤーを追加」
-2. 名前を入力 → 保存
-3. Player が `isActive = true` で追加される
+1. `/login` でログイン成功
+2. サーバ側に保存された「最後に選択した Group」へリダイレクト
+   - 該当 Group が存在しない、または Group を 1 つも持たない場合は `/groups/new` へ
+   - 複数 Group を持つ場合、ヘッダーの Group セレクタからいつでも切替可能
 
-### F3. Ruleset 管理
+### F3. プレイヤー登録
 
-1. Group ページ → 「Ruleset 管理」
+1. ヘッダーから現在の Group を確認
+2. Group ホーム → 「Group 設定」 → Player 管理タブ（`/groups/:groupId/settings/players`）
+3. 「プレイヤーを追加」 → 名前を入力 → 保存
+4. Player が `isActive = true` で追加される
+
+### F4. Ruleset テンプレート管理
+
+Ruleset は **テンプレート** であり、League / Match / Game の作成フォームの初期値を提供する。Ruleset を編集しても既存の League / Match / Game のルール値には影響しない（各エンティティが値を埋め込みデータとして保持しているため）。
+
+1. Group ホーム → 「Group 設定」 → Ruleset 管理タブ（`/groups/:groupId/settings/rulesets`）
 2. デフォルト Ruleset の編集 or 新規 Ruleset の作成
-3. 設定項目: 名前 / 配給原点 / 原点 / ウマパターン / 飛び賞 ON/OFF / 飛び賞ポイント
+3. 設定項目: 名前 / 配給原点 / 原点 / ウマパターン / 飛び賞ポイント（`0` なら飛び賞なし、`> 0` なら有効）
 4. Group のデフォルト Ruleset を切り替え可能
 
-### F4. League 作成
+### F5. League 作成
 
-1. Group ページ → 「リーグを作成」
+1. Group ホームのリーグ一覧セクション、または League 一覧（`/groups/:groupId/leagues`）→ 「リーグを作成」 → `/groups/:groupId/leagues/new`
 2. 入力項目: 名前 / 形式（`4P_HANCHAN` など）/ デフォルト Ruleset
 3. `publicSlug` を自動採番
-4. League ダッシュボードへ遷移
+4. `/groups/:groupId/leagues/:leagueId`（League ダッシュボード）へ遷移
 
-### F5. Match 作成
+### F6. Match 作成
 
-1. League ダッシュボード（または Group ページ）→ 「Match を作成」
+1. League ダッシュボードまたは Group ホーム → 「Match を作成」
+   - League 配下: `/groups/:groupId/leagues/:leagueId/matches/new`
+   - League 外: `/groups/:groupId/matches/new`
 2. 入力項目: 名前 / 開催日（任意）/ メモ（任意）/ デフォルト Ruleset（任意）
 3. League 配下の場合は `sequenceNumber` を自動採番
-4. Match ページへ遷移
+4. `/groups/:groupId/matches/:matchId`（Match ダッシュボード）へ遷移
 
-### F6. 対局結果入力（Game 作成）
+### F7. 対局結果入力（Game 作成）
 
-最も頻度が高いフロー。Match ページ / League ページ / Group ページのいずれからでも開始可能。
+最も頻度が高いフロー。Match ダッシュボード / League ダッシュボード / Group ホームのいずれからでも開始可能。
 
-1. 「対局を追加」
+1. 「対局を追加」 → `/groups/:groupId/games/new`（クエリで親 Match / League を指定）
 2. **プレイヤーを選択**（`format` の人数分）
    - Group 内の `isActive = true` な Player から選ぶ
 3. **各プレイヤーの素点を入力**
@@ -105,27 +132,27 @@ sidebar_position: 3
 6. 「保存」
    - 整合性検証: 素点合計 === `startingScore × 人数`
    - 失敗時はエラー表示、入力画面に戻る
-7. 成功時、ポイント・順位が自動計算されて結果画面に遷移
+7. 成功時、ポイント・順位が自動計算されて結果画面（`/groups/:groupId/games/:gameId`）に遷移
 
-### F7. 対局結果の修正
+### F8. 対局結果の修正
 
-1. 対象 Game の詳細ページ → 「編集」または「削除」
-2. 編集の場合、F6 と同じフォームで再入力
+1. 対象 Game の詳細ページ（`/groups/:groupId/games/:gameId`） → 「編集」または「削除」
+2. 編集の場合、`/groups/:groupId/games/:gameId/edit` で F7 と同じフォームを再入力
 3. 保存時にポイント・順位を再計算
 4. 削除は物理削除（仮置き。論理削除に切り替える可能性あり）
 5. League / Match / Group の集計は再計算済みの値で更新
 
-### F8. URL 共有による閲覧
+### F9. URL 共有による閲覧
 
-1. League ダッシュボード（または Match ページ）→ 「公開 URL をコピー」
+1. League ダッシュボード（または Match ダッシュボード）→ 「公開 URL をコピー」
 2. URL を共有相手に送る
 3. 受け取った Viewer がアクセス → 認証なしで成績・順位を閲覧
 
-### F9. プレイヤーの非アクティブ化 / 削除
+### F10. プレイヤーの非アクティブ化 / 削除
 
 Player の削除可否は対局履歴の有無で分岐する。
 
-1. Group ページ → プレイヤー一覧 → 該当 Player の操作メニュー
+1. `/groups/:groupId/players` → 該当 Player の操作メニュー
 2. 操作の選択:
    - **対局履歴あり** の場合: 「非アクティブにする」のみ表示
      - `isActive = false` になる
@@ -135,14 +162,23 @@ Player の削除可否は対局履歴の有無で分岐する。
      - 物理削除される
      - 削除後は Group のプレイヤー一覧から消える
 
-### F10. 招待発行
+### F11. Group の切替
 
-1. Owner が招待管理画面（`/invitations`）→ 「新規招待を発行」
+1. ヘッダーの Group セレクタを開く
+2. 切替先の Group を選択
+3. その Group のホーム（`/groups/:groupId`）へ遷移
+4. サーバ側の「最後に選択した Group」も更新（次回ログイン時の遷移先になる）
+
+### F12. 招待発行
+
+1. ヘッダーから招待管理画面（`/invitations`）→ 「新規招待を発行」
 2. （任意）招待先のメモ（誰宛か）を入力
 3. 招待 URL（トークン付き）が生成される
 4. URL をコピーしてメール / チャット等で共有相手に送る
 5. 招待先がアカウント作成を完了すると、招待のステータスが「使用済み」になる
 6. 未使用の招待は Owner が取消可能
+
+招待は Owner 単位の機能のため Group コンテキストに依存しない（Group セレクタの選択状態に関わらず実行可能）。
 
 ## 公開ページの表示内容（仮）
 
@@ -178,6 +214,7 @@ League の順位表からプレイヤー名をクリックして遷移する想�
 | 招待トークンの有効期限 | 仮: 7 日 |
 | Game の削除方法 | 物理削除（論理削除に切り替える可能性あり） |
 | `publicSlug` の文字数・命名規則 | 推測困難なランダム文字列（実装フェーズで決定） |
+| 「最後に選択した Group」の保持 | サーバ側に Owner ごとに保存。未保持・無効時は最古/最新の Group か `/groups/new` にフォールバック（実装時確定） |
 | Group 単位の公開ページ | MVP 対象外 |
 | League 外カジュアル対局の公開 | MVP 対象外 |
 | 対局結果入力時の入力補助 | 「最後の人の点数は自動計算」のような UX は実装フェーズで判断 |
