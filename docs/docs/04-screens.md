@@ -27,8 +27,8 @@ sidebar_position: 4
 | 項目 | 内容 |
 |---|---|
 | パス | `/login` |
-| 表示要素 | メール / パスワード入力欄 |
-| 主な操作 | ログイン |
+| 表示要素 | プロダクトロゴ（JANROKU）/ 「Google で続ける」ボタン / 招待制注記 / 利用規約・プライバシーポリシーへのリンク |
+| 主な操作 | Google OAuth でサインイン |
 | 遷移先 | 成功時: `/`（ダッシュボード） |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Login.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Login.html |
@@ -38,8 +38,8 @@ sidebar_position: 4
 | 項目 | 内容 |
 |---|---|
 | パス | `/invitations/accept/:token` |
-| 表示要素 | 招待元 Owner の情報 / メール / パスワード設定欄 |
-| 主な操作 | アカウント作成（招待トークン消費） |
+| 表示要素 | 招待元 Owner の情報 / 「Google で承諾」ボタン |
+| 主な操作 | Google OAuth でアカウント作成（招待トークン消費） |
 | 遷移先 | 成功時: Group 作成画面（S5） |
 | 備考 | 公開サインアップは提供しない。本画面はトークンが有効な場合のみ機能する。 |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Invite.html |
@@ -69,19 +69,22 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/groups/new` |
+| パス | S4 内のモーダル（独立ページなし） |
 | 表示要素 | Group 名入力 |
 | 主な操作 | 作成（同時にデフォルト Ruleset を自動生成） |
 | 遷移先 | `/groups/:groupId` |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Groups.html （`group-add` モーダル） |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Groups.html |
+| 備考 | デザイン上は S4 一覧画面の右上「+」から開くモーダル。`/groups/new` のような独立ルートは作らない。 |
 
-### S6. Group 詳細
+### S6. Group 詳細（ホーム）
 
 | 項目 | 内容 |
 |---|---|
 | パス | `/groups/:groupId` |
-| 構成 | タブ切替 |
+| 表示要素 | Group 通算成績 / 直近対局 / アクティブな League・Match のサマリ / League 一覧と Match 一覧へのリンク |
+| 主な操作 | League 一覧（S15）/ Match 作成（S10）/ 対局追加 / Settings（S16）への遷移 |
+| 備考 | プレイヤー管理 / Ruleset 管理は Settings 画面（S16）に分離した。本画面は俯瞰ハブとして機能する。 |
 
 タブ:
 
@@ -99,6 +102,7 @@ sidebar_position: 4
 備考: デザインでは Settings を独立ナビ項目として扱う構成になっている（タブ統合 vs 独立画面の最終形は実装フェーズで判断）。
 
 ### S7. League ダッシュボード
+### S7. League 詳細
 
 | 項目 | 内容 |
 |---|---|
@@ -113,7 +117,7 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/groups/:groupId/leagues/new` |
+| パス | S15 内のモーダル（独立ページなし） |
 | 表示要素 | 名前 / 形式 / デフォルト Ruleset 選択 |
 | 主な操作 | 作成 |
 | 遷移先 | `/leagues/:leagueId` |
@@ -145,7 +149,7 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/games/new`（URL クエリで親 Group / Match / League を指定） |
+| パス | S9 Match 詳細内のモーダル（独立ページなし） |
 | 表示要素 | プレイヤー選択（3 or 4 人）/ 素点入力 / 飛び賞チェック / 適用 Ruleset 確認 |
 | 主な操作 | 保存（整合性検証）|
 | 遷移先 | 成功時: 対局詳細（S13）または親画面 |
@@ -157,7 +161,7 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/games/:gameId/edit` |
+| パス | S9 Match 詳細内のモーダル（独立ページなし） |
 | 表示要素 | S11 と同じフォーム、現在値が初期値 |
 | 主な操作 | 保存（再計算） / 削除 |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=MatchList.html （S11 と同じモーダル） |
@@ -167,7 +171,7 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/games/:gameId` |
+| パス | S9 Match 詳細内の対局リスト行（独立ページなし） |
 | 表示要素 | 素点 / ポイント / 順位 / 適用 Ruleset / 飛び賞 |
 | 主な操作 | 編集（S12 へ）/ 削除 |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=MatchList.html （`match-detail` 内の Game 行） |
@@ -183,6 +187,24 @@ sidebar_position: 4
 | 備考 | 招待 URL はクリップボードにコピーして手動で共有する（メール自動送信は MVP 対象外） |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Invitations.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Invitations.html |
+
+### S15. League 一覧
+
+| 項目 | 内容 |
+|---|---|
+| パス | `/groups/:groupId/leagues` |
+| 表示要素 | アクティブ Group 内の League カード一覧（フィルタ: すべて / 進行中 / 終了）/ 各 League のサマリ（形式・期間・参加人数・対局数） |
+| 主な操作 | League 作成（S8 モーダル）/ League 詳細（S7）への遷移 |
+| 備考 | Group 配下に複数 League がある場合の俯瞰画面。 |
+
+### S16. Settings（プレイヤー / Ruleset 管理）
+
+| 項目 | 内容 |
+|---|---|
+| パス | `/groups/:groupId/settings` |
+| 表示要素 | 設定トップ → Ruleset テンプレート管理 / Player 管理 のサブセクション |
+| 主な操作 | Ruleset の追加・編集・削除・デフォルト切替 / Player の追加・編集・非アクティブ化・削除 |
+| 備考 | S6 のタブから独立した画面に切り出した。履歴ありの Player は「削除不可 → 非アクティブ化提案」を表示する。 |
 
 ---
 
@@ -271,10 +293,12 @@ sidebar_position: 4
 |---|---|---|
 | `/` | Owner ダッシュボード | 要 |
 | `/login` | ログイン | 不要 |
-| `/groups`, `/leagues`, `/matches`, `/games`, `/invitations` | Owner 用各機能 | 要 |
+| `/groups`, `/groups/:groupId/leagues`, `/groups/:groupId/settings`, `/leagues`, `/matches`, `/invitations` | Owner 用各機能 | 要 |
 | `/invitations/accept/:token` | 招待受け入れ | 不要（トークン検証） |
 | `/l/:publicSlug` | League 公開ビュー | 不要 |
 | `/m/:publicSlug` | Match 公開ビュー（League 外） | 不要 |
+
+`/games/*` は使わない。対局の作成 / 編集 / 詳細はすべて S9 Match 詳細内のモーダル + 対局リスト行で扱う。
 
 ---
 
@@ -282,18 +306,20 @@ sidebar_position: 4
 
 ```
 Owner:
-  [S1 Login] / [S2 招待受け入れ → 新規アカウント作成]
+  [S1 Login (Google OAuth)] / [S2 招待受け入れ (Google OAuth)]
        ↓
   [S3 Owner ダッシュボード `/`]
-       ├→ [S4 Group 一覧] ─── [S5 Group 作成]
+       ├→ [S4 Group 一覧] ─── [S5 Group 作成 (モーダル)]
        │       ↓
-       │   [S6 Group 詳細]
-       │       ├→ [S8 League 作成] → [S7 League ダッシュボード]
-       │       │                          ├→ [S10 Match 作成] → [S9 Match ダッシュボード]
-       │       │                          │                          └→ [S11 対局入力] → [S13 対局詳細]
-       │       │                          └→ [S11 対局入力 (League 直下)]
-       │       ├→ [S10 Match 作成 (League 外)] → [S9 Match ダッシュボード]
-       │       └→ [S11 対局入力 (Group 直下カジュアル)]
+       │   [S6 Group 詳細 (ホーム)]
+       │       ├→ [S15 League 一覧] ─── [S8 League 作成 (モーダル)]
+       │       │       ↓
+       │       │   [S7 League 詳細]
+       │       │       ├→ [S10 Match 作成] → [S9 Match 詳細]
+       │       │       │                          └→ [S11/S12/S13 対局 CRUD (モーダル & インライン)]
+       │       │       └→ [S9 Match 詳細 (既存)]
+       │       ├→ [S10 Match 作成 (League 外)] → [S9 Match 詳細]
+       │       └→ [S16 Settings (Player / Ruleset 管理)]
        └→ [S14 招待管理]
 
 Viewer:
@@ -308,12 +334,11 @@ Viewer:
 
 | 論点 | 仮置きの方針 |
 |---|---|
-| 認証方式 | メール + パスワード、**招待制**（公開サインアップなし。OAuth は後続） |
 | 招待トークンの有効期限 | 仮: 7 日（実装フェーズで調整） |
 | 招待数の上限 | 仮: 制限なし（運用で問題あれば後で制限導入） |
 | Group 切り替え UI | 共通ヘッダーに Group セレクタを置く想定（実装時確定） |
 | モバイル対応 | レスポンシブ前提（ネイティブアプリは対象外） |
 | ダッシュボード表示期間の絞り込み | 全期間 / 直近 N 日 / リーグ単位 など、UI で切替可能にするかは未決 |
 | Group 直下カジュアル対局の閲覧 UI | Owner ダッシュボード内のみ（公開ページなし）|
-| Owner 用個人成績ページ | S6 のサブビューで提供（独立画面にするかは実装フェーズで判断）|
+| Owner 用個人成績ページ | S16 Settings の Player サブセクションで提供（独立画面にするかは実装フェーズで判断）|
 | League 外 Match の個人成績公開ページ | MVP 対象外（必要に応じて後続で追加）|
