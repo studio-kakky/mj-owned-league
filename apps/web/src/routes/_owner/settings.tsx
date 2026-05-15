@@ -1,24 +1,168 @@
 /**
- * `/settings` — placeholder route for the bottom-nav "設定" tab.
+ * `/settings` — S16 Settings (Ruleset / Player 管理) (`04-screens.md` § S16,
+ * Issue #17).
  *
- * Real Settings (Player / Ruleset management) is S16; tracked separately.
- * See sibling `leagues.tsx` for the same rationale.
+ * Wiring strategy mirrors `/groups` and `/`:
+ *   - The loader is the only place that crosses the TanStack Start RPC
+ *     boundary. It pulls the active-group-scoped Settings payload via
+ *     `getSettingsServerFn`.
+ *   - The screen component (`SettingsScreen`) takes the payload + action
+ *     callbacks as props and emits no service calls of its own.
+ *   - Every mutation calls `router.invalidate()` after success so the loader
+ *     re-fetches and the lists reflect the new state. This is the same
+ *     pattern used by `/groups`.
+ *
+ * Active group resolution:
+ *   The server picks the Owner's first Group as the active context (see
+ *   `server/settings.ts` for the rationale). When the GroupSwitcher (Issue
+ *   #11) starts surfacing a selected group via the layout, we will plumb
+ *   that id into the loader's input — the server function already accepts
+ *   the substitution by virtue of validating both `groupId` arguments on
+ *   mutations and re-deriving the active group on read.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
+import { useCallback } from 'react';
+import type { RulesetFormInput } from '../../components/settings';
+import { SettingsScreen } from '../../components/settings';
+import {
+  createPlayerServerFn,
+  createRulesetServerFn,
+  deactivatePlayerServerFn,
+  deletePlayerServerFn,
+  deleteRulesetServerFn,
+  getSettingsServerFn,
+  reactivatePlayerServerFn,
+  renamePlayerServerFn,
+  setDefaultRulesetServerFn,
+  updateRulesetServerFn,
+} from '../../server/settings';
 
 export const Route = createFileRoute('/_owner/settings')({
-  component: SettingsPlaceholder,
+  loader: async ({ context }) => {
+    const data = await getSettingsServerFn({
+      data: { ownerId: context.ownerSession.ownerId },
+    });
+    return { data };
+  },
+  component: SettingsPage,
 });
 
-function SettingsPlaceholder() {
+function SettingsPage() {
+  const router = useRouter();
+  const { ownerSession } = Route.useRouteContext();
+  const { data } = Route.useLoaderData();
+
+  // `groupId` is captured at the top so all action callbacks can close over
+  // it. When the active group is `null` (Owner has no Groups yet) every
+  // mutation is a no-op; the SettingsScreen disables every write affordance
+  // in that branch but we guard here as a defence-in-depth.
+  const groupId = data.group?.id ?? null;
+
+  const handleCreateRuleset = useCallback(
+    async (input: RulesetFormInput) => {
+      if (groupId === null) return;
+      await createRulesetServerFn({
+        data: { ownerId: ownerSession.ownerId, groupId, input },
+      });
+      await router.invalidate();
+    },
+    [groupId, ownerSession.ownerId, router],
+  );
+
+  const handleUpdateRuleset = useCallback(
+    async (rulesetId: string, input: RulesetFormInput) => {
+      await updateRulesetServerFn({
+        data: { ownerId: ownerSession.ownerId, rulesetId, input },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleDeleteRuleset = useCallback(
+    async (rulesetId: string) => {
+      await deleteRulesetServerFn({
+        data: { ownerId: ownerSession.ownerId, rulesetId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleSetDefaultRuleset = useCallback(
+    async (rulesetId: string) => {
+      await setDefaultRulesetServerFn({
+        data: { ownerId: ownerSession.ownerId, rulesetId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleCreatePlayer = useCallback(
+    async (name: string) => {
+      if (groupId === null) return;
+      await createPlayerServerFn({
+        data: { ownerId: ownerSession.ownerId, groupId, name },
+      });
+      await router.invalidate();
+    },
+    [groupId, ownerSession.ownerId, router],
+  );
+
+  const handleRenamePlayer = useCallback(
+    async (playerId: string, name: string) => {
+      await renamePlayerServerFn({
+        data: { ownerId: ownerSession.ownerId, playerId, name },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleDeletePlayer = useCallback(
+    async (playerId: string) => {
+      await deletePlayerServerFn({
+        data: { ownerId: ownerSession.ownerId, playerId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleDeactivatePlayer = useCallback(
+    async (playerId: string) => {
+      await deactivatePlayerServerFn({
+        data: { ownerId: ownerSession.ownerId, playerId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
+  const handleReactivatePlayer = useCallback(
+    async (playerId: string) => {
+      await reactivatePlayerServerFn({
+        data: { ownerId: ownerSession.ownerId, playerId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
+
   return (
-    <section className="space-y-3">
-      <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Settings</p>
-      <h1 className="text-2xl font-bold text-zinc-50">設定</h1>
-      <p className="text-sm text-zinc-400">
-        本画面の実装は別 Issue で対応します（プレースホルダー）。
-      </p>
-    </section>
+    <SettingsScreen
+      data={data}
+      onCreateRuleset={handleCreateRuleset}
+      onUpdateRuleset={handleUpdateRuleset}
+      onDeleteRuleset={handleDeleteRuleset}
+      onSetDefaultRuleset={handleSetDefaultRuleset}
+      onCreatePlayer={handleCreatePlayer}
+      onRenamePlayer={handleRenamePlayer}
+      onDeletePlayer={handleDeletePlayer}
+      onDeactivatePlayer={handleDeactivatePlayer}
+      onReactivatePlayer={handleReactivatePlayer}
+    />
   );
 }
