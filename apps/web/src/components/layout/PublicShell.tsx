@@ -36,13 +36,11 @@ export function PublicShell({ children }: PublicShellProps) {
       <footer className="border-t border-zinc-900 bg-zinc-950">
         <div className="mx-auto flex max-w-3xl flex-col gap-1 px-4 py-6 text-xs text-zinc-500">
           <p>JANROKU は招待制の麻雀リーグ記録サービスです。</p>
-          {/*
-            The `/login` link is intentionally not wired up yet — the S1 route
-            lands in a different issue (and TanStack Router's typed `<Link>`
-            would refuse a non-existent target). Once S1 is in the tree,
-            replace this with `<Link to="/login">Owner ログイン</Link>`.
-          */}
-          <p className="text-zinc-300">Owner ログインは別途用意されています。</p>
+          <p>
+            <Link to="/login" className="text-zinc-300 underline-offset-2 hover:underline">
+              Owner ログイン
+            </Link>
+          </p>
         </div>
       </footer>
     </div>

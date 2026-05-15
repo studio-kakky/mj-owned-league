@@ -6,27 +6,67 @@
  * underscore in TanStack Router's file convention — see
  * `@tanstack/router-generator/.../utils.js#isSegmentPathless`).
  *
+ * Auth gate (Issue #12):
+ *   `beforeLoad` queries Better Auth for the current session and redirects
+ *   unauthenticated users to `/login` (S1). This satisfies
+ *   `04-screens.md` § S3 "未認証で `/` にアクセスした場合は `/login` へ
+ *   リダイレクト" and is mounted on the layout — not on `/_owner/index` —
+ *   so every Owner sub-route inherits it without duplication.
+ *
+ *   Failure mode: if the session probe itself fails (network error /
+ *   Worker offline), we err on the side of redirecting to `/login`. Better
+ *   to show the sign-in page than to render a half-broken Owner shell.
+ *
  * Session / active-group wiring — current status:
- *   The Better Auth integration (#7) exposes `/api/auth/*` on the Worker,
- *   but a TanStack Start server-function / loader that turns the cookie
- *   into an `OwnerSession` is NOT yet in place. So for now this layout
- *   passes `session: null`, `activeGroup: null`, `groups: null` — i.e. the
- *   "guest" shape — which the shell tolerates (Issue #11 acceptance
- *   criterion: 未認証状態でも UI が崩れない). Wiring real values is a
- *   follow-up issue, and only requires editing this file.
+ *   `beforeLoad` returns the raw Better Auth session shape, but the active
+ *   group and the full group list still need a dedicated loader. So
+ *   `OwnerShell` is still rendered with `activeGroup: null` /
+ *   `groups: null`; only the `session` prop is now populated. Wiring active
+ *   group is a follow-up issue.
  */
 
-import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import { authClient } from '../auth/client';
 import { OwnerShell } from '../components/layout';
+import type { OwnerSession } from '../components/layout/types';
 
 export const Route = createFileRoute('/_owner')({
+  beforeLoad: async () => {
+    let session: Awaited<ReturnType<typeof authClient.getSession>> | null = null;
+    try {
+      session = await authClient.getSession();
+    } catch {
+      // Network or Worker-side failure. Treat as unauthenticated — the
+      // user will see the login page rather than a partially-rendered
+      // dashboard. The actual error stays visible in the browser console
+      // via Better Auth's own logging.
+      throw redirect({ to: '/login' });
+    }
+
+    if (!session?.data?.user) {
+      throw redirect({ to: '/login' });
+    }
+
+    const user = session.data.user;
+    const ownerSession: OwnerSession = {
+      ownerId: user.id,
+      // `user.name` is what Better Auth populates from Google's `name`
+      // claim. When it is empty (extremely rare with Google but possible
+      // with other providers), fall back to the local-part of the email.
+      displayName: user.name?.trim().length ? user.name : (user.email?.split('@')[0] ?? 'Owner'),
+    };
+
+    return { ownerSession };
+  },
   component: OwnerLayout,
 });
 
 function OwnerLayout() {
+  const { ownerSession } = Route.useRouteContext();
+
   return (
     <OwnerShell
-      session={null}
+      session={ownerSession}
       activeGroup={null}
       groups={null}
       onSelectGroup={() => {
