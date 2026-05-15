@@ -13,7 +13,9 @@
     "check": "biome check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "worker:dev": "wrangler dev --local --persist-to .wrangler/state",
+    "worker:types": "wrangler types"
   },
   "dependencies": {
     "@tanstack/react-router": "1.169.2",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
+    "@cloudflare/workers-types": "4.20260515.1",
     "@playwright/test": "1.60.0",
     "@tailwindcss/vite": "4.3.0",
     "@tanstack/router-plugin": "1.167.35",
@@ -36,6 +39,7 @@
     "tailwindcss": "4.3.0",
     "typescript": "6.0.3",
     "vite": "8.0.13",
-    "vitest": "4.1.6"
+    "vitest": "4.1.6",
+    "wrangler": "4.91.0"
   }
 }

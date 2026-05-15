@@ -19,6 +19,9 @@ src/routeTree.gen.ts
 .env.*.local
 .dev.vars
 
+# Cloudflare / Wrangler local state
+.wrangler/
+
 # OS / Editor
 .DS_Store
 .idea/
