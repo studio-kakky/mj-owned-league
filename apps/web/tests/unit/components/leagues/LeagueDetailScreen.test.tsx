@@ -72,6 +72,13 @@ describe('LeagueDetailScreen', () => {
     expect(screen.getByTestId('league-detail-game-row-game-1')).toBeInTheDocument();
   });
 
+  it('renders a "マッチを追加" link pointing at /matches/new with the league id (Issue #20)', () => {
+    render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
+    const link = screen.getByTestId('league-detail-match-create-link');
+    expect(link).toHaveAttribute('href', '/matches/new');
+    expect(link).toHaveTextContent('マッチを追加');
+  });
+
   it('shows the empty-state copy for the ranking section when no rows are present', () => {
     render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
     expect(screen.getByTestId('league-detail-ranking-empty')).toBeInTheDocument();
