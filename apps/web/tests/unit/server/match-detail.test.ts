@@ -89,6 +89,27 @@ describe('listMatchesHandler', () => {
     const list = await listMatchesHandler({ ownerId: owner, leagueId: foreign.id });
     expect(list.scope.leagueId).toBeNull();
   });
+
+  it('surfaces leagueOptions for the in-page リーグセレクタ (#22)', async () => {
+    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const list = await listMatchesHandler({ ownerId: owner });
+
+    // Every owned League surfaces — including those without matches yet.
+    expect(list.leagueOptions.map((o) => o.id).sort()).toEqual(
+      seeded.leagues.map((l) => l.id).sort(),
+    );
+    // Each option carries a non-empty Group label for chip disambiguation.
+    expect(list.leagueOptions.every((o) => o.groupName.length > 0)).toBe(true);
+  });
+
+  it('does not leak foreign Leagues into leagueOptions (#22)', async () => {
+    await listLeaguesHandler({ ownerId: owner });
+    const otherSeed = await listLeaguesHandler({ ownerId: otherOwner });
+    const foreignIds = new Set(otherSeed.leagues.map((l) => l.id));
+
+    const list = await listMatchesHandler({ ownerId: owner });
+    expect(list.leagueOptions.every((o) => !foreignIds.has(o.id))).toBe(true);
+  });
 });
 
 describe('submitGameHandler', () => {

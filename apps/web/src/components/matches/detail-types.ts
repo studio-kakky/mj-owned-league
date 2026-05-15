@@ -159,11 +159,18 @@ export interface MatchListItem {
  * every Match owned by the caller across Groups.
  *
  * `leagueName` is null when the filter is cross-Group (= no single League).
+ *
+ * `leagueOptions` is unfiltered — it always lists every League the Owner has
+ * across every Group, so the in-page リーグセレクタ can switch the scope
+ * without an extra round trip. Order is `groupName`-then-`name` ascending so
+ * leagues from the same Group cluster together.
  */
 export interface MatchListData {
   matches: ReadonlyArray<MatchListItem>;
   /** Set when the list is filtered to a single League — drives the header. */
   scope: MatchListScope;
+  /** All Leagues the Owner has — drives the in-page selector. */
+  leagueOptions: ReadonlyArray<MatchListLeagueOption>;
 }
 
 export interface MatchListScope {
@@ -173,6 +180,17 @@ export interface MatchListScope {
   groupName: string | null;
   /** Convenience link for "Match を追加" — pre-filled with `?leagueId=` etc. */
   createSearch: { leagueId?: string; groupId?: string };
+}
+
+/**
+ * One entry in the in-page リーグセレクタ. `groupName` is surfaced as a
+ * secondary label so two leagues with identical names in different Groups
+ * stay distinguishable.
+ */
+export interface MatchListLeagueOption {
+  id: string;
+  name: string;
+  groupName: string;
 }
 
 /**

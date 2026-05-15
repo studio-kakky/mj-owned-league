@@ -48,6 +48,7 @@ import type {
   MatchGameRow,
   MatchListData,
   MatchListItem,
+  MatchListLeagueOption,
   MatchPlayerOption,
   MatchRankingRow,
   MatchRulesetOption,
@@ -241,9 +242,23 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
   const groupNameById = new Map(ownedGroups.map((g) => [g.id, g.name] as const));
 
   const leagueNameById = new Map<string, string>();
+  // Collected separately so the in-page リーグセレクタ can render every owned
+  // League, not just the ones with matches yet. Sorted later (groupName-then-
+  // leagueName ascending) so leagues from the same Group cluster together.
+  const leagueOptionRows: Array<MatchListLeagueOption> = [];
   for (const l of store.leagues.values()) {
-    if (ownedGroupIds.has(l.groupId)) leagueNameById.set(l.id, l.name);
+    if (!ownedGroupIds.has(l.groupId)) continue;
+    leagueNameById.set(l.id, l.name);
+    leagueOptionRows.push({
+      id: l.id,
+      name: l.name,
+      groupName: groupNameById.get(l.groupId) ?? '',
+    });
   }
+  leagueOptionRows.sort((a, b) => {
+    if (a.groupName !== b.groupName) return a.groupName.localeCompare(b.groupName);
+    return a.name.localeCompare(b.name);
+  });
 
   let scopedLeague: { id: string; name: string; groupName: string } | null = null;
   let leagueFilter: string | null = null;
@@ -324,6 +339,7 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
       groupName: scopedLeague?.groupName ?? groupScopedName,
       createSearch,
     },
+    leagueOptions: leagueOptionRows,
   };
 }
 
