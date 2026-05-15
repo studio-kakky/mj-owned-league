@@ -17,7 +17,15 @@ export {
 } from './errors';
 export { GameResultService } from './game-result-service';
 export { GameService } from './game-service';
-export { GroupService } from './group-service';
+export {
+  DEFAULT_RULESET_NAME,
+  DEFAULT_RULESET_RETURN_SCORE,
+  DEFAULT_RULESET_STARTING_SCORE,
+  DEFAULT_RULESET_UMA_PATTERN,
+  GroupHasHistoryError,
+  GroupService,
+  type GroupServiceDeps,
+} from './group-service';
 export {
   INVITATION_DEFAULT_TTL_MS,
   InvitationService,
