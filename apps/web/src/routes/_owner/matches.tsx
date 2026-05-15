@@ -49,5 +49,7 @@ export const Route = createFileRoute('/_owner/matches')({
 
 function MatchesPage() {
   const { data } = Route.useLoaderData();
-  return <MatchListScreen matches={data.matches} scope={data.scope} />;
+  return (
+    <MatchListScreen matches={data.matches} scope={data.scope} leagueOptions={data.leagueOptions} />
+  );
 }

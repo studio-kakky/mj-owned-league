@@ -6,6 +6,7 @@ export type {
   MatchGameRow,
   MatchListData,
   MatchListItem,
+  MatchListLeagueOption,
   MatchListScope,
   MatchPlayerOption,
   MatchRankingRow,

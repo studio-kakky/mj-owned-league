@@ -69,6 +69,7 @@ describe('MatchListScreen', () => {
           groupName: '金曜定例会',
           createSearch: { leagueId: 'l1' },
         }}
+        leagueOptions={[]}
       />,
     );
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2026 春シーズン');
@@ -83,6 +84,7 @@ describe('MatchListScreen', () => {
       <MatchListScreen
         matches={[makeItem()]}
         scope={{ leagueId: null, leagueName: null, groupName: null, createSearch: {} }}
+        leagueOptions={[]}
       />,
     );
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('マッチ');
@@ -101,10 +103,86 @@ describe('MatchListScreen', () => {
           groupName: '金曜定例会',
           createSearch: { leagueId: 'l1' },
         }}
+        leagueOptions={[]}
       />,
     );
     expect(screen.getByTestId('matches-empty')).toHaveTextContent(
       'このリーグにはまだマッチがありません',
     );
+  });
+
+  it('renders a league selector chip strip with "すべて" + each option (#22)', () => {
+    render(
+      <MatchListScreen
+        matches={[makeItem()]}
+        scope={{ leagueId: null, leagueName: null, groupName: null, createSearch: {} }}
+        leagueOptions={[
+          { id: 'l1', name: '2026 春シーズン', groupName: '金曜定例会' },
+          { id: 'l2', name: '2026 夏シーズン', groupName: '土曜定例会' },
+        ]}
+      />,
+    );
+
+    const selector = screen.getByTestId('matches-league-selector');
+    expect(selector).toBeInTheDocument();
+
+    const allChip = screen.getByTestId('matches-league-chip-all');
+    // Mocked Link emits `?` when `search` is an (empty) object — production
+    // strips this. The route path is the assertion that matters here.
+    expect(allChip.getAttribute('href')?.replace(/\?$/, '')).toBe('/matches');
+    expect(allChip).toHaveAttribute('aria-pressed', 'true');
+
+    const chipL1 = screen.getByTestId('matches-league-chip-l1');
+    expect(chipL1).toHaveAttribute('href', '/matches?leagueId=l1');
+    expect(chipL1).toHaveAttribute('aria-pressed', 'false');
+
+    const chipL2 = screen.getByTestId('matches-league-chip-l2');
+    expect(chipL2).toHaveAttribute('href', '/matches?leagueId=l2');
+  });
+
+  it('marks the active chip when filtered to a League (#22)', () => {
+    render(
+      <MatchListScreen
+        matches={[makeItem()]}
+        scope={{
+          leagueId: 'l1',
+          leagueName: '2026 春シーズン',
+          groupName: '金曜定例会',
+          createSearch: { leagueId: 'l1' },
+        }}
+        leagueOptions={[
+          { id: 'l1', name: '2026 春シーズン', groupName: '金曜定例会' },
+          { id: 'l2', name: '2026 夏シーズン', groupName: '土曜定例会' },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('matches-league-chip-all')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('matches-league-chip-l1')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('hides the selector entirely when the Owner has no Leagues (#22)', () => {
+    render(
+      <MatchListScreen
+        matches={[]}
+        scope={{ leagueId: null, leagueName: null, groupName: null, createSearch: {} }}
+        leagueOptions={[]}
+      />,
+    );
+    expect(screen.queryByTestId('matches-league-selector')).toBeNull();
+  });
+
+  it('appends the Group name as a sublabel when two leagues share a name (#22)', () => {
+    render(
+      <MatchListScreen
+        matches={[]}
+        scope={{ leagueId: null, leagueName: null, groupName: null, createSearch: {} }}
+        leagueOptions={[
+          { id: 'l1', name: '春シーズン', groupName: '金曜定例会' },
+          { id: 'l2', name: '春シーズン', groupName: '土曜定例会' },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('matches-league-chip-l1')).toHaveTextContent('金曜定例会');
+    expect(screen.getByTestId('matches-league-chip-l2')).toHaveTextContent('土曜定例会');
   });
 });
