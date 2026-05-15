@@ -1,31 +1,30 @@
 /**
- * `/l/:publicSlug` — temporary scaffold for P1 League 公開ページ.
+ * `/l/$publicSlug` — P1 League 公開ページ (`04-screens.md` § P1, Issue #23).
  *
- * Issue #11 only owns the layout shell; the actual P1 content (順位表 /
- * Match 一覧 / 対局履歴) is a follow-up. This route renders inside
- * `PublicShell` and shows the `publicSlug` param so a developer can
- * eyeball that the public layout wraps the page correctly.
+ * Wiring strategy mirrors the Owner-side `/leagues/$leagueId` route:
+ *   - `getPublicLeagueServerFn` → route loader. Returns the projected
+ *     {@link PublicLeagueData} payload or `null` for unknown slugs.
+ *   - On `null` we render {@link PublicNotFoundView} inline rather than
+ *     redirecting — viewers might land on a stale URL from any channel, and
+ *     bouncing them silently elsewhere would mask the cause.
+ *   - No auth check; `_public.tsx` provides the shell without an
+ *     `beforeLoad` gate. The slug is the access control.
  */
 
 import { createFileRoute } from '@tanstack/react-router';
+import { PublicLeagueScreen, PublicNotFoundView } from '../../components/public';
+import { getPublicLeagueServerFn } from '../../server/public';
 
 export const Route = createFileRoute('/_public/l/$publicSlug')({
-  component: PublicLeaguePlaceholder,
+  loader: async ({ params }) => {
+    const data = await getPublicLeagueServerFn({ data: { publicSlug: params.publicSlug } });
+    return { data };
+  },
+  component: PublicLeaguePage,
 });
 
-function PublicLeaguePlaceholder() {
-  const { publicSlug } = Route.useParams();
-  return (
-    <section className="space-y-3">
-      <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Public League</p>
-      <h1 className="text-2xl font-bold text-zinc-50">公開リーグ</h1>
-      <p className="text-sm text-zinc-400">
-        slug:{' '}
-        <code className="rounded bg-zinc-900 px-1.5 py-0.5 text-emerald-300">{publicSlug}</code>
-      </p>
-      <p className="text-sm text-zinc-400">
-        本画面の実装は P1 として別 Issue で対応します（プレースホルダー）。
-      </p>
-    </section>
-  );
+function PublicLeaguePage() {
+  const { data } = Route.useLoaderData();
+  if (data === null) return <PublicNotFoundView />;
+  return <PublicLeagueScreen data={data} />;
 }
