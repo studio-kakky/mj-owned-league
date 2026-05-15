@@ -52,7 +52,7 @@ export function LeagueDetailScreen({ data, origin }: LeagueDetailScreenProps) {
       <LeagueHeader data={data} origin={origin} />
       <RulesetCallout data={data} />
       <RankingSection ranking={data.ranking} />
-      <MatchesSection matches={data.matches} />
+      <MatchesSection matches={data.matches} leagueId={data.id} />
       <RecentGamesSection games={data.recentGames} />
     </section>
   );
@@ -228,16 +228,24 @@ function RankingSection({ ranking }: { ranking: ReadonlyArray<LeagueRankingRow> 
   );
 }
 
-function MatchesSection({ matches }: { matches: ReadonlyArray<LeagueMatchRow> }) {
+function MatchesSection({
+  matches,
+  leagueId,
+}: {
+  matches: ReadonlyArray<LeagueMatchRow>;
+  leagueId: string;
+}) {
   return (
     <section className="space-y-3" data-testid="league-detail-matches-section">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-zinc-200">マッチ</h2>
         <Link
-          to="/matches"
-          className="text-xs text-emerald-300 transition-colors hover:text-emerald-200"
+          to="/matches/new"
+          search={{ leagueId }}
+          data-testid="league-detail-match-create-link"
+          className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
         >
-          マッチを開く →
+          マッチを追加
         </Link>
       </div>
       {matches.length === 0 ? (
