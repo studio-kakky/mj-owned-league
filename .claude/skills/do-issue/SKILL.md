@@ -1,6 +1,7 @@
 ---
 name: do-issue
 description: studio-kakky/mj-owned-league リポジトリ専用。GitHub Issue 番号と着手の意図を示す発話（「issue #N やって」「#N やろ」「#N やってよ」「#N 実装」「#N に着手」「issue N お願い」「issue やる」など）でトリガーされる。Issue を取得して関連ドキュメント・デザイン・依存 Issue を読み込み、計画 → ブランチ作成 → 実装 → 型・Lint・テスト → コミット → PR 作成まで一気通貫で実行する。Issue 番号があり、「やる / やって / 実装 / 着手 / 進める / お願い」系の語が一緒に出てきたら必ず起動すること。Issue 起票・閲覧・PR レビューだけの依頼や、Issue 番号のない一般的な実装依頼では起動しない。
+context: fork
 ---
 
 # do-issue

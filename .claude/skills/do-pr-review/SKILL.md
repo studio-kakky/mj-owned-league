@@ -1,6 +1,7 @@
 ---
 name: do-pr-review
 description: studio-kakky/mj-owned-league リポジトリ専用。GitHub PR 番号と「レビュー / マージ / merge / 確認」系の意図が組み合わさった発話（「PR #N レビューして」「#N マージ」「PR #N をレビューしてマージ」「review and merge #N」など）でトリガーされる。PR を取得し、リンク Issue の受け入れ基準との照合・コード品質（TS/React）・セキュリティ・CI/conflict 状態を順に確認し、すべて green なら自動で squash merge + ブランチ削除まで実行する。指摘があれば PR にレビューコメントを投稿して停止する。PR 番号があり、「レビュー / マージ / 確認」系の語と一緒に出てきたら必ず起動すること。新規 PR 作成、PR への追加コミットのみの依頼、merge せずレビューだけする依頼、PR の draft 化では起動しない。
+context: fork
 ---
 
 # do-pr-review
