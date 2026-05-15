@@ -15,13 +15,19 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "worker:dev": "wrangler dev --local --persist-to .wrangler/state",
-    "worker:types": "wrangler types"
+    "worker:types": "wrangler types",
+    "drizzle:generate": "drizzle-kit generate",
+    "drizzle:apply:local": "wrangler d1 migrations apply janroku-local --local --persist-to .wrangler/state",
+    "drizzle:apply:remote": "wrangler d1 migrations apply janroku-local --remote",
+    "drizzle:apply": "pnpm drizzle:apply:local"
   },
   "dependencies": {
     "@tanstack/react-router": "1.169.2",
     "@tanstack/react-start": "1.167.65",
+    "drizzle-orm": "0.45.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
@@ -35,6 +41,8 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
+    "drizzle-kit": "0.31.10",
+    "drizzle-zod": "0.8.3",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.0",
     "typescript": "6.0.3",

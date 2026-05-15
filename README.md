@@ -61,13 +61,34 @@ pnpm --filter web worker:dev
 |---|---|
 | `GET /api/health` | Worker 自体の死活確認 |
 | `GET /api/db/ping` | `SELECT 1` を D1 に投げて疎通確認 |
+| `GET /api/db/drizzle-ping` | Drizzle 経由で `ping_checks` テーブルへ書き込み / 読み出しの往復確認 |
 
 ```bash
 curl http://127.0.0.1:8787/api/db/ping
 # => {"status":"ok","ping":1}
+
+curl http://127.0.0.1:8787/api/db/drizzle-ping
+# => {"status":"ok","inserted":{...},"latest":{...}}
 ```
 
 `.wrangler/state/` は gitignore 済み。スキーマを作り直したい場合はディレクトリを丸ごと削除する。
+
+### Drizzle ORM / マイグレーション
+
+スキーマは `apps/web/src/db/schema.ts`、`drizzle-kit` の設定は `apps/web/drizzle.config.ts` に置く。マイグレーション SQL は `apps/web/drizzle/` に出力され、コミット対象とする。
+
+```bash
+# スキーマ変更を SQL マイグレーションに反映（apps/web/drizzle/ に出力）
+pnpm --filter web drizzle:generate
+
+# ローカル D1（Miniflare）にマイグレーションを適用
+pnpm --filter web drizzle:apply        # = drizzle:apply:local
+
+# リモート D1 への適用は実 D1 が用意でき次第（README 末尾の TODO 参照）
+pnpm --filter web drizzle:apply:remote
+```
+
+`drizzle-zod` を使った Zod スキーマ派生は `apps/web/src/db/zod.ts` を参照（issue #9 で本格的なエンティティに展開する）。
 
 ### Worker のソース
 
@@ -84,8 +105,7 @@ curl http://127.0.0.1:8787/api/db/ping
 1. **実 D1 データベースの作成** — `wrangler d1 create janroku-preview` / `wrangler d1 create janroku-production` を実行し、`wrangler.toml` の `database_id` プレースホルダ（`local-dev-placeholder`）を置き換える。`[env.preview]` / `[env.production]` ブロックの整備もここで行う。
 2. **Cloudflare API トークンの設定** — GitHub Actions Secrets に `CLOUDFLARE_API_TOKEN` を登録し、CI から `wrangler deploy` できる状態にする。
 3. **TanStack Start ↔ Workers 統合** — SSR と server functions を Worker 上で動かし、server function から D1 binding にアクセスできるようにする。
-4. **Drizzle ORM + drizzle-kit セットアップ** — D1 用スキーマ定義とマイグレーション生成 / 適用フロー。
-5. **本番デプロイ** — `wrangler deploy` と Preview Deploy の自動化。
+4. **本番デプロイ** — `wrangler deploy` と Preview Deploy の自動化。
 
 ## 検証
 

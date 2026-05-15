@@ -20,7 +20,8 @@
       "!**/playwright-report",
       "!**/test-results",
       "!**/.wrangler",
-      "!**/src/routeTree.gen.ts"
+      "!**/src/routeTree.gen.ts",
+      "!**/drizzle"
     ]
   },
   "formatter": {
