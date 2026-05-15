@@ -19,6 +19,9 @@ compatibility_flags = ["nodejs_compat"]
 binding = "DB"
 database_name = "janroku-local"
 database_id = "local-dev-placeholder"
+# drizzle-kit emits SQL migrations into `./drizzle`. `wrangler d1 migrations
+# apply` reads from this directory to apply them to the bound database.
+migrations_dir = "drizzle"
 
 # Workers-side observability defaults are fine for MVP; revisit when real
 # deploys land.
