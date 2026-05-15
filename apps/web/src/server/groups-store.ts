@@ -1,15 +1,15 @@
 /**
- * Process-wide in-memory store backing the `/groups` server functions
- * (Issue #15).
+ * Process-wide in-memory store backing the Owner-side server functions
+ * (Issue #15 `/groups`, Issue #14 `/` dashboard, …).
  *
  * Why a module-level singleton:
- *   The `/groups` server functions are stateless from the caller's
- *   perspective (each is its own RPC), but they need to share data across
- *   invocations within a single `vite dev` run — otherwise a "create then
- *   list" request pair would see different stores. Hanging the Maps off a
- *   `globalThis` key makes the singleton survive hot module replacement
- *   inside Vite's dev server, which is exactly the right scope for the
- *   "pretend D1 is wired" interim.
+ *   The server functions are stateless from the caller's perspective (each
+ *   is its own RPC), but they need to share data across invocations within a
+ *   single `vite dev` run — otherwise a "create then list" request pair
+ *   would see different stores. Hanging the Maps off a `globalThis` key
+ *   makes the singleton survive hot module replacement inside Vite's dev
+ *   server, which is exactly the right scope for the "pretend D1 is wired"
+ *   interim.
  *
  * Why this is acceptable interim behaviour:
  *   - Restarting the Node process clears the store. That matches the
@@ -17,18 +17,38 @@
  *   - The store is server-side: the client can only mutate it via the
  *     declared server functions. Replacing this module with a Drizzle-backed
  *     repository (when the D1 binding becomes reachable from server
- *     functions) is a one-file change in `groups.ts` — no contract change.
+ *     functions, tracked separately as #39) is a one-file change in the
+ *     consuming server modules — no contract change.
  *
  * Seed data:
- *   `seedIfEmpty` runs once on first access per ownerId. It mirrors the
- *   dev-only fixtures that previously lived on the client (`/_owner/groups.tsx`)
- *   so manual QA can still walk through the create / edit / delete (with and
- *   without history) flows. Seeding is keyed on `ownerId` so two
- *   simultaneous dev sessions logged in as different owners don't pollute
- *   each other's view.
+ *   `seedDevDataIfEmpty` runs once on first access per ownerId. It mirrors
+ *   the dev-only fixtures that previously lived on the client
+ *   (`/_owner/groups.tsx`) so manual QA can still walk through the create /
+ *   edit / delete (with and without history) flows. Seeding is keyed on
+ *   `ownerId` so two simultaneous dev sessions logged in as different
+ *   owners don't pollute each other's view.
+ *
+ *   For S3 the seed additionally materialises a couple of Players, an
+ *   active League with a Match, plus one PENDING invitation so the
+ *   dashboard cards / summaries are non-empty at first paint.
  */
 
-import type { Game, Group, NewGame, NewGroup, NewRuleset, Ruleset } from '../db/schema';
+import type {
+  Game,
+  Group,
+  Invitation,
+  League,
+  Match,
+  NewGame,
+  NewGroup,
+  NewInvitation,
+  NewLeague,
+  NewMatch,
+  NewPlayer,
+  NewRuleset,
+  Player,
+  Ruleset,
+} from '../db/schema';
 import {
   DEFAULT_RULESET_NAME,
   DEFAULT_RULESET_RETURN_SCORE,
@@ -38,19 +58,27 @@ import {
 
 /**
  * Shape of each per-entity insert input the repositories accept. Exposed so
- * `groups.ts` can avoid re-declaring `NewGroup` etc. for its repository
+ * server modules can avoid re-declaring `NewGroup` etc. for their repository
  * implementations.
  */
 export interface InMemoryStoreShape {
   groups: NewGroup;
   rulesets: NewRuleset;
   games: NewGame;
+  players: NewPlayer;
+  leagues: NewLeague;
+  matches: NewMatch;
+  invitations: NewInvitation;
 }
 
 export interface GroupServerStore {
   groups: Map<string, Group>;
   rulesets: Map<string, Ruleset>;
   games: Map<string, Game>;
+  players: Map<string, Player>;
+  leagues: Map<string, League>;
+  matches: Map<string, Match>;
+  invitations: Map<string, Invitation>;
   /**
    * Set of owner ids that have already had their dev seed materialised. Kept
    * as a `Set` so the seed runs at most once per owner even across many
@@ -72,6 +100,10 @@ function createEmptyStore(): GroupServerStore {
     groups: new Map(),
     rulesets: new Map(),
     games: new Map(),
+    players: new Map(),
+    leagues: new Map(),
+    matches: new Map(),
+    invitations: new Map(),
     seededOwnerIds: new Set(),
   };
 }
@@ -167,5 +199,77 @@ export function seedDevDataIfEmpty(ownerId: string): void {
     umaPattern: DEFAULT_RULESET_UMA_PATTERN,
     tobiEnabled: false,
     tobiPoint: null,
+  });
+
+  // ---------------------------------------------------------------------
+  // S3 (Issue #14) dashboard fixtures — Players, an active League, the
+  // Match that holds the seeded Game above, and one PENDING invitation.
+  //
+  // The "active" concept is not modelled in the schema (`League` has no
+  // `endedAt` column). The S3 server function treats *every* League whose
+  // Group is owned by the caller as "active" for MVP; this seed therefore
+  // only needs one League to make the active-league card render.
+  // ---------------------------------------------------------------------
+
+  const fridayPlayerNames = ['たかし', 'なお', 'ゆうき', 'みき'];
+  for (const [index, name] of fridayPlayerNames.entries()) {
+    const playerId = `dev-${ownerId}-friday-player-${index + 1}`;
+    store.players.set(playerId, {
+      id: playerId,
+      groupId: g1Id,
+      name,
+      isActive: true,
+      createdAt: now,
+    });
+  }
+
+  const leagueId = `dev-${ownerId}-friday-league-spring`;
+  store.leagues.set(leagueId, {
+    id: leagueId,
+    groupId: g1Id,
+    name: '2026 春シーズン',
+    format: '4P_HANCHAN',
+    defaultRulesetId: r1Id,
+    publicSlug: `dev-spring-${ownerId.slice(0, 6)}`,
+    createdAt: now,
+  });
+
+  const matchId = `dev-${ownerId}-friday-match-1`;
+  store.matches.set(matchId, {
+    id: matchId,
+    groupId: g1Id,
+    leagueId,
+    name: '第 1 節',
+    sequenceNumber: 1,
+    heldAt: '2026-05-08',
+    memo: null,
+    defaultRulesetId: r1Id,
+    createdAt: now,
+  });
+
+  // Back-fill the seeded Game so it points at the new Match / League; that
+  // way the dashboard's "recent games" feed has a row that is also wired up
+  // to a Match / League (= active).
+  const seededGame = store.games.get(gameId);
+  if (seededGame) {
+    store.games.set(gameId, {
+      ...seededGame,
+      matchId,
+      leagueId,
+    });
+  }
+
+  const invitationId = `dev-${ownerId}-invitation-1`;
+  store.invitations.set(invitationId, {
+    id: invitationId,
+    issuedByOwnerId: ownerId,
+    memo: '次回参加候補',
+    token: `dev-token-${ownerId.slice(0, 8)}-1`,
+    status: 'PENDING',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    consumedByUserId: null,
+    consumedAt: null,
+    revokedAt: null,
+    createdAt: now,
   });
 }
