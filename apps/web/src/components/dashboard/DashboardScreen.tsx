@@ -62,11 +62,11 @@ export function DashboardScreen({ data }: DashboardScreenProps) {
 // compact on 375pt.
 
 function PageHeader({ pendingInvitationCount }: { pendingInvitationCount: number }) {
-  // Invitations get a non-link pill: the destination screen (S14 `/invitations`)
-  // is a separate issue and the route does not yet exist in the route tree
-  // (TanStack Router's `Link.to` types would reject the path). When S14 lands
-  // this becomes a `<Link to="/invitations">` — TypeScript will then surface
-  // the swap by re-tightening the `to` literal union.
+  // The pill is now a Link to S14 (`/invitations`, Issue #21). It surfaces the
+  // PENDING-and-unexpired count and acts as the navigation affordance for
+  // managing them — collapsing two things into one chip keeps the header
+  // compact on 375pt. Hover state mirrors the active-leagues / active-matches
+  // cards so the affordance reads as "tappable" without a separate icon.
   return (
     <header className="space-y-2" data-testid="dashboard-header">
       <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Dashboard</p>
@@ -75,9 +75,10 @@ function PageHeader({ pendingInvitationCount }: { pendingInvitationCount: number
           <h1 className="text-2xl font-bold text-zinc-50">ホーム</h1>
           <p className="mt-1 text-sm text-zinc-400">直近の活動を俯瞰するハブです。</p>
         </div>
-        <span
+        <Link
+          to="/invitations"
           data-testid="dashboard-invitations-pill"
-          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-200"
+          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:border-emerald-500/70 hover:text-zinc-50"
         >
           <span>招待</span>
           <span
@@ -86,7 +87,7 @@ function PageHeader({ pendingInvitationCount }: { pendingInvitationCount: number
           >
             {pendingInvitationCount}
           </span>
-        </span>
+        </Link>
       </div>
     </header>
   );
@@ -281,9 +282,10 @@ function RecentGamesSection({ games }: { games: ReadonlyArray<DashboardRecentGam
 // promote them then.
 
 // The `moreTo` union is restricted to routes that currently exist in
-// `routeTree.gen.ts`. `/invitations` (S14) is intentionally excluded — see
-// the note in {@link PageHeader} about the route not being registered yet.
-type DashboardRoute = '/groups' | '/leagues' | '/matches';
+// `routeTree.gen.ts`. `/invitations` is included since Issue #21 registered
+// the route (the header pill links there directly; the section-level
+// "もっと見る" link uses one of these three).
+type DashboardRoute = '/groups' | '/leagues' | '/matches' | '/invitations';
 
 interface DashboardSectionProps {
   title: string;
