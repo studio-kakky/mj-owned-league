@@ -92,12 +92,14 @@ describe('DashboardScreen', () => {
     expect(screen.getByTestId('dashboard-header')).toHaveTextContent('Dashboard');
   });
 
-  it('renders the pending-invitation count pill (S14 link tracked separately)', () => {
+  it('renders the pending-invitation count pill as a link to /invitations (S14)', () => {
     render(<DashboardScreen data={data} />);
-    // `/invitations` is not yet registered in `routeTree.gen.ts` (S14 is its
-    // own issue), so the pill is intentionally a non-link. When the route
-    // lands the pill becomes a `<Link to="/invitations">`.
-    expect(screen.getByTestId('dashboard-invitations-pill')).toBeInTheDocument();
+    const pill = screen.getByTestId('dashboard-invitations-pill');
+    expect(pill).toBeInTheDocument();
+    // The pill is a Link wired up to S14 (Issue #21). The Link mock at the
+    // top of this file serialises `to` into the `href`, so we can assert
+    // the destination without spinning up a router.
+    expect(pill).toHaveAttribute('href', '/invitations');
     expect(screen.getByTestId('dashboard-invitations-count')).toHaveTextContent('2');
   });
 
