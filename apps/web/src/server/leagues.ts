@@ -102,7 +102,16 @@ function makeRepos(): ServerRepos {
 // Input validators
 // ---------------------------------------------------------------------------
 
-const listLeaguesInput = z.object({ ownerId: z.string().min(1) });
+const listLeaguesInput = z.object({
+  ownerId: z.string().min(1),
+  /**
+   * Optional Group filter. When supplied, the response is narrowed to the
+   * Leagues / Rulesets that belong to that Group. Foreign or unknown ids
+   * silently fall through to the cross-Group response so a stale deep link
+   * (e.g. from S6 Group 詳細 after a Group rename / delete) does not 4xx.
+   */
+  groupId: z.string().min(1).optional(),
+});
 const leagueDetailInput = z.object({
   ownerId: z.string().min(1),
   leagueId: z.string().min(1),
@@ -180,9 +189,16 @@ export async function listLeaguesHandler(input: ListLeaguesInput): Promise<Leagu
   const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
   const groupNameById = new Map(ownedGroups.map((g) => [g.id, g.name] as const));
 
+  // When the caller supplied `groupId` and the Group is owned by them, narrow
+  // every projection below to that Group. Foreign / stale ids silently fall
+  // through (the caller's link is busted, but the page is still usable).
+  const scopedGroupId =
+    input.groupId !== undefined && ownedGroupIds.has(input.groupId) ? input.groupId : null;
+
   const items: LeagueListItem[] = [];
   for (const league of store.leagues.values()) {
     if (!ownedGroupIds.has(league.groupId)) continue;
+    if (scopedGroupId !== null && league.groupId !== scopedGroupId) continue;
     items.push(projectListItem(league, store, groupNameById));
   }
 
@@ -197,8 +213,10 @@ export async function listLeaguesHandler(input: ListLeaguesInput): Promise<Leagu
 
   // Sort Group options by createdAt ascending so the dropdown matches the
   // order Owners see elsewhere (S4 / S16). Falls back to insertion order
-  // when createdAt ties.
+  // when createdAt ties. When scoped to a single Group the dropdown
+  // collapses to that single option — the form is effectively locked.
   const groups: ReadonlyArray<LeagueGroupOption> = ownedGroups
+    .filter((g) => scopedGroupId === null || g.id === scopedGroupId)
     .slice()
     .sort((a, b) => (a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0))
     .map(
@@ -210,10 +228,12 @@ export async function listLeaguesHandler(input: ListLeaguesInput): Promise<Leagu
     );
 
   // Rulesets across every owned Group, tagged with `groupId` so the modal
-  // can filter client-side.
+  // can filter client-side. Narrowed to the scoped Group when present so
+  // the create-modal dropdown is pre-trimmed.
   const rulesets: LeagueRulesetOptionWithGroup[] = [];
   for (const ruleset of store.rulesets.values()) {
     if (!ownedGroupIds.has(ruleset.groupId)) continue;
+    if (scopedGroupId !== null && ruleset.groupId !== scopedGroupId) continue;
     const group = store.groups.get(ruleset.groupId);
     rulesets.push({
       ...projectRulesetOption(ruleset, group?.defaultRulesetId ?? null),
