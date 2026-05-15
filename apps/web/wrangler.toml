@@ -1,0 +1,24 @@
+name = "janroku-web"
+main = "worker/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# D1 database binding
+# ---------------------------------------------------------------------------
+# `database_id` is a placeholder while we operate in --local mode (see README).
+# In --local mode wrangler ignores this value and uses a local Miniflare-backed
+# SQLite store under `.wrangler/state` (or wherever `--persist-to` points).
+#
+# When the real Preview / Production D1 databases are provisioned via
+# `wrangler d1 create` (follow-up to issue #5), replace this placeholder with
+# the actual database_id, and add `[env.preview]` / `[env.production]` blocks
+# as needed.
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "janroku-local"
+database_id = "local-dev-placeholder"
+
+# Workers-side observability defaults are fine for MVP; revisit when real
+# deploys land.

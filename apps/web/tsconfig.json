@@ -13,8 +13,20 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom",
+      "@cloudflare/workers-types"
+    ]
   },
-  "include": ["src", "tests/unit", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"],
-  "exclude": ["node_modules", ".output", ".tanstack", "tests/e2e"]
+  "include": [
+    "src",
+    "worker",
+    "tests/unit",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": ["node_modules", ".output", ".tanstack", ".wrangler", "tests/e2e"]
 }

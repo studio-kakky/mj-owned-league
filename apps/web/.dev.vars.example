@@ -1,0 +1,10 @@
+# =============================================================================
+# Local Cloudflare Worker secrets (used by `wrangler dev --local`)
+# =============================================================================
+# Copy this file to `.dev.vars` (which is gitignored) and adjust values as
+# needed. Do NOT put real production secrets here — `.dev.vars` is for local
+# development only. Real secrets are managed via `wrangler secret put <KEY>`.
+# -----------------------------------------------------------------------------
+
+# Better Auth signing secret. Any non-empty random string is fine for local dev.
+BETTER_AUTH_SECRET=dev-secret-change-me
