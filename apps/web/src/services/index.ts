@@ -10,11 +10,21 @@ export {
   DomainError,
   EntityNotFoundError,
   GameMatchLeagueMismatchError,
+  INVITATION_INVALID_REASONS,
+  InvitationInvalidError,
+  type InvitationInvalidReason,
   PlayerHasHistoryError,
 } from './errors';
 export { GameResultService } from './game-result-service';
 export { GameService } from './game-service';
 export { GroupService } from './group-service';
+export {
+  INVITATION_DEFAULT_TTL_MS,
+  InvitationService,
+  type InvitationServiceDeps,
+  type IssuedInvitation,
+  type IssueInvitationInput,
+} from './invitation-service';
 export { LeagueService } from './league-service';
 export { MatchService } from './match-service';
 export { OwnerService } from './owner-service';

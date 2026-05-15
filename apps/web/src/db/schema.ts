@@ -272,3 +272,177 @@ export const gameResults = sqliteTable(
 
 export type GameResult = typeof gameResults.$inferSelect;
 export type NewGameResult = typeof gameResults.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Better Auth tables (`02-domain-model.md` § Owner / `03-user-flow.md` § F1)
+// ---------------------------------------------------------------------------
+// Better Auth (`docs/docs/05-tech-stack.md` § 認証) requires four tables to
+// back its Drizzle adapter: `user`, `session`, `account`, `verification`.
+// We expose them as plural keys (`users`, `sessions`, …) to match the rest of
+// this schema; the adapter is initialised with `usePlural: true` so its model
+// names line up with these exports.
+//
+// Columns mirror Better Auth's documented base schema (see
+// `@better-auth/core/db/schema/*` in node_modules) exactly. Adding optional
+// columns later is fine — the adapter only requires the documented base
+// columns to exist; everything else can be `null`.
+//
+// Why timestamps are `integer({ mode: 'timestamp_ms' })` here and TEXT
+// everywhere else in this schema:
+//   Better Auth passes raw `Date` instances through the adapter and expects
+//   them to round-trip without manual serialisation. D1's parameter binder
+//   rejects `Date` objects with `D1_TYPE_ERROR: Type 'object' not supported`
+//   when the column is TEXT, so we let Drizzle's `timestamp_ms` mode do the
+//   marshalling. We keep the domain tables on TEXT for backward compatibility
+//   — those columns are written from our own code with explicit ISO strings.
+//
+// Why we keep these separate from `owners`:
+//   - `owners` is the *domain* entity (`02-domain-model.md` § Owner). It is
+//     referenced by Group / Player / Ruleset / etc. and carries no auth state.
+//   - `users` is the *auth* entity managed entirely by Better Auth.
+// Bridging the two (so a freshly-authenticated `user` also gets an `owners`
+// row) is the responsibility of the auth bootstrap layer in
+// `apps/web/src/auth/*`, not the schema.
+
+export const users = sqliteTable('user', {
+  // `text` (UUID) IDs match the rest of the schema and Better Auth's default
+  // `generateId` behaviour, which produces opaque random strings.
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
+  image: text('image'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+export const sessions = sqliteTable('session', {
+  id: text('id').primaryKey(),
+  // `expiresAt` is the only column Better Auth uses for rolling sessions
+  // (see `BaseSession.expiresAt` in @better-auth/core).
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  token: text('token').notNull().unique(),
+  // `userId` is the FK into `users.id`. `cascade` so deleting a user cleans
+  // up their sessions — Better Auth would otherwise leave orphans.
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
+
+export const accounts = sqliteTable('account', {
+  id: text('id').primaryKey(),
+  // `accountId` is the provider-side ID (Google's `sub` claim). `providerId`
+  // is the provider name (`"google"`). Together they identify the link.
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  idToken: text('id_token'),
+  accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp_ms' }),
+  refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp_ms' }),
+  scope: text('scope'),
+  // `password` is only used by the email/password sign-in flow, which we
+  // disable in the auth config. Kept here because Better Auth's adapter
+  // schema-checks the column existence regardless of feature flags.
+  password: text('password'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type Account = typeof accounts.$inferSelect;
+export type NewAccount = typeof accounts.$inferInsert;
+
+export const verifications = sqliteTable('verification', {
+  id: text('id').primaryKey(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export type Verification = typeof verifications.$inferSelect;
+export type NewVerification = typeof verifications.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Invitation — Owner-issued invite tokens (`03-user-flow.md` § F1 / F10)
+// ---------------------------------------------------------------------------
+// Owned by Better Auth-less domain code, not Better Auth itself: the token
+// gates *who is allowed to complete a Google OAuth sign-in*, but Better Auth's
+// own `verification` table is unsuitable (it is reaped on a different policy
+// and has no concept of "who issued it / who consumed it").
+//
+// Lifecycle, mirroring `docs/docs/03-user-flow.md` § F10:
+//   1. Owner creates an invitation → `status = "PENDING"`, `expiresAt = now + 7d`.
+//   2. Invitee opens `/invitations/accept/:token` and completes Google OAuth.
+//      The auth callback consumes the token → `status = "CONSUMED"`,
+//      `consumedAt = now`, `consumedByUserId = <new user.id>`.
+//   3. Alternatively, the Owner can revoke a still-PENDING invitation →
+//      `status = "REVOKED"`, `revokedAt = now`.
+//   4. Background reaping is *not* implemented; `InvitationService.verify`
+//      treats `expiresAt < now` as `EXPIRED` regardless of `status`.
+//
+// `token` is the raw URL-safe token; we treat it as a secret-equivalent and
+// rely on the unique index for lookups. Storing the hash (rather than the
+// plaintext) is a hardening follow-up — out of scope for the MVP infra ticket.
+
+export const INVITATION_STATUSES = ['PENDING', 'CONSUMED', 'REVOKED'] as const;
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
+export const invitations = sqliteTable('invitations', {
+  id: text('id').primaryKey(),
+  // The Owner who issued the invitation. Cascading delete here would silently
+  // drop history we may want for audit; we go with `restrict` and force the
+  // caller to revoke first.
+  issuedByOwnerId: text('issued_by_owner_id')
+    .notNull()
+    .references(() => owners.id, { onDelete: 'restrict' }),
+  // Free-form memo from the Owner ("for Bob" etc.) — not used by the system.
+  memo: text('memo'),
+  token: text('token').notNull().unique(),
+  status: text('status', { enum: INVITATION_STATUSES }).notNull().default('PENDING'),
+  // 7-day default expiry comes from `03-user-flow.md` § 仮置き事項 and is set
+  // by `InvitationService.issue`. The column itself just stores the timestamp.
+  expiresAt: text('expires_at').notNull(),
+  // Filled when a Google OAuth signup callback consumes the invite.
+  // FK is intentionally optional because the user row is created in the same
+  // transaction; we don't want a circular FK ordering problem.
+  consumedByUserId: text('consumed_by_user_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+  consumedAt: text('consumed_at'),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+export type Invitation = typeof invitations.$inferSelect;
+export type NewInvitation = typeof invitations.$inferInsert;

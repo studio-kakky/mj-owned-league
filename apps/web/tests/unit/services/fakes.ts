@@ -21,11 +21,13 @@ import type {
   Game,
   GameResult,
   Group,
+  Invitation,
   League,
   Match,
   NewGame,
   NewGameResult,
   NewGroup,
+  NewInvitation,
   NewLeague,
   NewMatch,
   NewOwner,
@@ -39,6 +41,7 @@ import type {
   GameRepository,
   GameResultRepository,
   GroupRepository,
+  InvitationRepository,
   LeagueRepository,
   MatchRepository,
   OwnerRepository,
@@ -293,6 +296,43 @@ export class FakeGameRepository implements GameRepository {
   }
   async delete(id: string) {
     return this.rows.delete(id);
+  }
+}
+
+export class FakeInvitationRepository implements InvitationRepository {
+  readonly rows = new Map<string, Invitation>();
+
+  async findById(id: string) {
+    return this.rows.get(id) ?? null;
+  }
+  async findByToken(token: string) {
+    for (const row of this.rows.values()) {
+      if (row.token === token) return row;
+    }
+    return null;
+  }
+  async listByIssuer(ownerId: string) {
+    return [...this.rows.values()].filter((i) => i.issuedByOwnerId === ownerId);
+  }
+  async create(input: NewInvitation) {
+    const row: Invitation = {
+      createdAt: now(),
+      status: 'PENDING',
+      memo: null,
+      consumedAt: null,
+      consumedByUserId: null,
+      revokedAt: null,
+      ...input,
+    } as Invitation;
+    this.rows.set(row.id, row);
+    return row;
+  }
+  async update(id: string, input: UpdateInput<NewInvitation>) {
+    const existing = this.rows.get(id);
+    if (!existing) return null;
+    const next = applyUpdate(existing, input);
+    this.rows.set(id, next);
+    return next;
   }
 }
 

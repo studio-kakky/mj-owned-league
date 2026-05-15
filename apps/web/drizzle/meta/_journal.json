@@ -15,6 +15,13 @@
       "when": 1778811863010,
       "tag": "0001_open_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778813876525,
+      "tag": "0002_charming_sphinx",
+      "breakpoints": true
     }
   ]
 }

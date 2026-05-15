@@ -27,15 +27,20 @@
 
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-zod';
 import {
+  accounts,
   gameResults,
   games,
   groups,
+  invitations,
   leagues,
   matches,
   owners,
   pingChecks,
   players,
   rulesets,
+  sessions,
+  users,
+  verifications,
 } from './schema';
 
 // --- ping_checks (smoke test from #6) --------------------------------------
@@ -91,3 +96,31 @@ export const updateGameSchema = createUpdateSchema(games);
 export const selectGameResultSchema = createSelectSchema(gameResults);
 export const insertGameResultSchema = createInsertSchema(gameResults);
 export const updateGameResultSchema = createUpdateSchema(gameResults);
+
+// --- Better Auth (user / session / account / verification) -----------------
+// These tables are owned by Better Auth at runtime — application code rarely
+// inserts / updates them by hand. The Zod schemas are still exposed for
+// symmetry and because tests + the bridge that links `users` ↔ `owners` need
+// to assert their shape.
+
+export const selectUserSchema = createSelectSchema(users);
+export const insertUserSchema = createInsertSchema(users);
+export const updateUserSchema = createUpdateSchema(users);
+
+export const selectSessionSchema = createSelectSchema(sessions);
+export const insertSessionSchema = createInsertSchema(sessions);
+export const updateSessionSchema = createUpdateSchema(sessions);
+
+export const selectAccountSchema = createSelectSchema(accounts);
+export const insertAccountSchema = createInsertSchema(accounts);
+export const updateAccountSchema = createUpdateSchema(accounts);
+
+export const selectVerificationSchema = createSelectSchema(verifications);
+export const insertVerificationSchema = createInsertSchema(verifications);
+export const updateVerificationSchema = createUpdateSchema(verifications);
+
+// --- invitations -----------------------------------------------------------
+
+export const selectInvitationSchema = createSelectSchema(invitations);
+export const insertInvitationSchema = createInsertSchema(invitations);
+export const updateInvitationSchema = createUpdateSchema(invitations);
