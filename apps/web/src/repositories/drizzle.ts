@@ -22,6 +22,8 @@ import {
   gameResults,
   games,
   groups,
+  type Invitation,
+  invitations,
   type League,
   leagues,
   type Match,
@@ -29,6 +31,7 @@ import {
   type NewGame,
   type NewGameResult,
   type NewGroup,
+  type NewInvitation,
   type NewLeague,
   type NewMatch,
   type NewOwner,
@@ -45,6 +48,7 @@ import type {
   GameRepository,
   GameResultRepository,
   GroupRepository,
+  InvitationRepository,
   LeagueRepository,
   MatchRepository,
   OwnerRepository,
@@ -355,5 +359,49 @@ export class DrizzleGameResultRepository implements GameResultRepository {
       .where(and(eq(gameResults.gameId, gameId)))
       .returning();
     return deleted.length;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Invitation
+// ---------------------------------------------------------------------------
+// Like the other repositories, this class is a thin pass-through. The
+// invitation lifecycle (PENDING → CONSUMED / REVOKED, expiry handling) lives
+// in `InvitationService` so it can be unit-tested against the fake repository
+// without touching D1.
+
+export class DrizzleInvitationRepository implements InvitationRepository {
+  constructor(private readonly db: Database) {}
+
+  async findById(id: string): Promise<Invitation | null> {
+    const rows = await this.db.select().from(invitations).where(eq(invitations.id, id)).limit(1);
+    return rows[0] ?? null;
+  }
+
+  async findByToken(token: string): Promise<Invitation | null> {
+    const rows = await this.db
+      .select()
+      .from(invitations)
+      .where(eq(invitations.token, token))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async listByIssuer(ownerId: string): Promise<Invitation[]> {
+    return this.db.select().from(invitations).where(eq(invitations.issuedByOwnerId, ownerId));
+  }
+
+  async create(input: NewInvitation): Promise<Invitation> {
+    const [row] = await this.db.insert(invitations).values(input).returning();
+    return row;
+  }
+
+  async update(id: string, input: UpdateInput<NewInvitation>): Promise<Invitation | null> {
+    const [row] = await this.db
+      .update(invitations)
+      .set(input)
+      .where(eq(invitations.id, id))
+      .returning();
+    return row ?? null;
   }
 }

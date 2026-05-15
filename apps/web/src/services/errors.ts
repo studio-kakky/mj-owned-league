@@ -62,3 +62,24 @@ export class EntityNotFoundError extends DomainError {
     super(`${entity} ${id} not found`);
   }
 }
+
+/**
+ * Why an invitation token cannot be used. Returned via
+ * `InvitationInvalidError` rather than swallowed as a generic Error so the
+ * upstream Better Auth hook / sign-in route can produce a meaningful 4xx
+ * response without re-deriving the reason via string matching.
+ *
+ * Mirrors the lifecycle in `apps/web/src/db/schema.ts` § Invitation:
+ *  - `NOT_FOUND` — token does not exist (typo, deleted, never issued).
+ *  - `EXPIRED`   — `expiresAt < now`. Status is irrelevant.
+ *  - `CONSUMED`  — already used by some signup callback.
+ *  - `REVOKED`   — Owner cancelled it before consumption.
+ */
+export const INVITATION_INVALID_REASONS = ['NOT_FOUND', 'EXPIRED', 'CONSUMED', 'REVOKED'] as const;
+export type InvitationInvalidReason = (typeof INVITATION_INVALID_REASONS)[number];
+
+export class InvitationInvalidError extends DomainError {
+  constructor(public readonly reason: InvitationInvalidReason) {
+    super(`Invitation cannot be used: ${reason}`);
+  }
+}

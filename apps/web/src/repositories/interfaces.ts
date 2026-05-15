@@ -19,11 +19,13 @@ import type {
   Game,
   GameResult,
   Group,
+  Invitation,
   League,
   Match,
   NewGame,
   NewGameResult,
   NewGroup,
+  NewInvitation,
   NewLeague,
   NewMatch,
   NewOwner,
@@ -103,6 +105,19 @@ export interface GameRepository {
   create(input: NewGame): Promise<Game>;
   update(id: string, input: UpdateInput<NewGame>): Promise<Game | null>;
   delete(id: string): Promise<boolean>;
+}
+
+export interface InvitationRepository {
+  findById(id: string): Promise<Invitation | null>;
+  /**
+   * Token-based lookup is the hot path: the `/invitations/accept/:token`
+   * route resolves the token from the URL before letting the user proceed
+   * with Google OAuth.
+   */
+  findByToken(token: string): Promise<Invitation | null>;
+  listByIssuer(ownerId: string): Promise<Invitation[]>;
+  create(input: NewInvitation): Promise<Invitation>;
+  update(id: string, input: UpdateInput<NewInvitation>): Promise<Invitation | null>;
 }
 
 export interface GameResultRepository {
