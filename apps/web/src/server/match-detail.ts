@@ -118,6 +118,13 @@ const matchDetailInput = z.object({
 const matchListInput = z.object({
   ownerId: z.string().min(1),
   leagueId: z.string().min(1).optional(),
+  /**
+   * Optional Group filter. When supplied (and the Group is owned by the
+   * caller), the list is narrowed to Matches in that Group. Honoured only
+   * when `leagueId` is not also supplied — `leagueId` is the stricter
+   * filter and wins. Foreign / unknown ids silently fall through.
+   */
+  groupId: z.string().min(1).optional(),
 });
 
 const playerInput = z.object({
@@ -250,9 +257,18 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
     // Foreign / stale leagueId — silently fall through to cross-Group list.
   }
 
+  // `groupId` is honoured only when `leagueId` is absent. The League filter
+  // is stricter (one Group's worth of Matches) and the Group filter would be
+  // a no-op underneath it. Foreign / unknown ids silently drop.
+  const groupFilter: string | null =
+    leagueFilter === null && input.groupId !== undefined && ownedGroupIds.has(input.groupId)
+      ? input.groupId
+      : null;
+
   const matches = [...store.matches.values()].filter((m) => {
     if (!ownedGroupIds.has(m.groupId)) return false;
     if (leagueFilter !== null && m.leagueId !== leagueFilter) return false;
+    if (groupFilter !== null && m.groupId !== groupFilter) return false;
     return true;
   });
 
@@ -288,14 +304,24 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
   items.sort((a, b) => compareMatchListItems(a, b, leagueFilter !== null));
 
   const createSearch: { leagueId?: string; groupId?: string } = {};
-  if (scopedLeague !== null) createSearch.leagueId = scopedLeague.id;
+  if (scopedLeague !== null) {
+    createSearch.leagueId = scopedLeague.id;
+  } else if (groupFilter !== null) {
+    createSearch.groupId = groupFilter;
+  }
+
+  // When scoped by Group (and not by League) surface the Group name in the
+  // header so the list reads "Group: 金曜定例会" instead of the cross-Group
+  // empty-state.
+  const groupScopedName: string | null =
+    leagueFilter === null && groupFilter !== null ? (groupNameById.get(groupFilter) ?? null) : null;
 
   return {
     matches: items,
     scope: {
       leagueId: scopedLeague?.id ?? null,
       leagueName: scopedLeague?.name ?? null,
-      groupName: scopedLeague?.groupName ?? null,
+      groupName: scopedLeague?.groupName ?? groupScopedName,
       createSearch,
     },
   };

@@ -88,7 +88,21 @@ function makeRepos(): ServerRepos {
 // Input validators
 // ---------------------------------------------------------------------------
 
-const settingsInput = z.object({ ownerId: z.string().min(1) });
+const settingsInput = z.object({
+  ownerId: z.string().min(1),
+  /**
+   * Optional Group selector. When supplied (and owned by the caller), the
+   * loader builds the Settings payload for that Group instead of the
+   * Owner's first Group. Foreign / unknown ids silently fall through to
+   * the default selection — same convention as the other list handlers.
+   *
+   * Surfaced so screens like S6 Group 詳細 can deep-link to the matching
+   * Group's Settings via `/settings?groupId=…`. Once the GroupSwitcher
+   * (Issue #11) exposes the active group through the layout we can promote
+   * this to the canonical input.
+   */
+  groupId: z.string().min(1).optional(),
+});
 
 const rulesetFormSchema = z.object({
   name: z.string().trim().min(1).max(60),
@@ -174,7 +188,11 @@ export async function getSettingsHandler(input: SettingsInput): Promise<Settings
     return { group: null, rulesets: [], players: [] };
   }
 
-  const active = ownedGroups[0] as Group;
+  // Honour the caller's `groupId` selection when present and owned;
+  // otherwise default to the first owned Group.
+  const requested =
+    input.groupId !== undefined ? ownedGroups.find((g) => g.id === input.groupId) : undefined;
+  const active = (requested ?? ownedGroups[0]) as Group;
   const groupSummary: SettingsGroupSummary = {
     id: active.id,
     name: active.name,

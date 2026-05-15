@@ -24,16 +24,22 @@ import { listMatchesServerFn } from '../../server/match-detail';
 
 const searchSchema = z.object({
   leagueId: z.string().min(1).optional(),
+  // Optional Group filter — used by S6 Group 詳細 to deep-link into "matches
+  // scoped to a specific Group". `leagueId` takes precedence when both are
+  // supplied (the server then validates the League belongs to the same
+  // owner — foreign / stale ids fall through to the broader list).
+  groupId: z.string().min(1).optional(),
 });
 
 export const Route = createFileRoute('/_owner/matches')({
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ leagueId: search.leagueId }),
+  loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
   loader: async ({ context, deps }) => {
     const data = await listMatchesServerFn({
       data: {
         ownerId: context.ownerSession.ownerId,
         leagueId: deps.leagueId,
+        groupId: deps.groupId,
       },
     });
     return { data };

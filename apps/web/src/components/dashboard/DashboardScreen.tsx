@@ -116,7 +116,8 @@ function GroupsSection({ groups }: { groups: ReadonlyArray<DashboardGroupCard> }
           {groups.map((group) => (
             <li key={group.id} data-testid={`dashboard-group-card-${group.id}`}>
               <Link
-                to="/groups"
+                to="/groups/$groupId"
+                params={{ groupId: group.id }}
                 className="block rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 transition-colors hover:border-emerald-500/70"
               >
                 <p className="truncate text-sm font-semibold text-zinc-100">{group.name}</p>

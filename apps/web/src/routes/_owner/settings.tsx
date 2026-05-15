@@ -23,6 +23,7 @@
 
 import { createFileRoute, useRouter } from '@tanstack/react-router';
 import { useCallback } from 'react';
+import { z } from 'zod';
 import type { RulesetFormInput } from '../../components/settings';
 import { SettingsScreen } from '../../components/settings';
 import {
@@ -38,10 +39,20 @@ import {
   updateRulesetServerFn,
 } from '../../server/settings';
 
+// Optional `?groupId=` lets callers (S6 Group 詳細 link) deep-link to "the
+// Settings of that Group" without having to flip the global active-group
+// picker. The server handler silently falls back to the Owner's first
+// Group when the id is foreign / stale.
+const searchSchema = z.object({
+  groupId: z.string().min(1).optional(),
+});
+
 export const Route = createFileRoute('/_owner/settings')({
-  loader: async ({ context }) => {
+  validateSearch: searchSchema,
+  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
+  loader: async ({ context, deps }) => {
     const data = await getSettingsServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
+      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
     });
     return { data };
   },
