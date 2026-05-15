@@ -7,13 +7,12 @@
  *   - 対局履歴 (recent games feed)
  *   - 公開 URL (copy-to-clipboard)
  *
- * Why ranking is rendered as an empty-state instead of a real table:
- *   The interim in-memory store (`groups-store.ts`) does not yet model
- *   `GameResult` rows. The server projects `ranking: []`. The screen still
- *   has the section so the layout is final; we surface explanatory copy
- *   pointing the user at the `直近の対局` feed as a fallback. When the D1
- *   binding lands (#39) and the server starts computing ranking from
- *   GameResult, this section becomes populated without touching the screen.
+ * Ranking is computed from GameResult rows server-side (Issue #19): the
+ * server walks every Game in the League, aggregates points / topCount /
+ * lastCount per Player, and ships the rows pre-sorted. Leagues with no
+ * recorded results still render the empty-state copy. When the D1 binding
+ * lands (#39) the projection swaps from the in-memory store to a SQL query
+ * without changing the wire shape.
  *
  * Public URL UX:
  *   The "公開 URL をコピー" button uses `navigator.clipboard.writeText` when
@@ -239,14 +238,24 @@ function MatchesSection({
     <section className="space-y-3" data-testid="league-detail-matches-section">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-zinc-200">マッチ</h2>
-        <Link
-          to="/matches/new"
-          search={{ leagueId }}
-          data-testid="league-detail-match-create-link"
-          className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
-        >
-          マッチを追加
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/matches"
+            search={{ leagueId }}
+            data-testid="league-detail-match-list-link"
+            className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-emerald-500/70"
+          >
+            一覧
+          </Link>
+          <Link
+            to="/matches/new"
+            search={{ leagueId }}
+            data-testid="league-detail-match-create-link"
+            className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
+          >
+            追加
+          </Link>
+        </div>
       </div>
       {matches.length === 0 ? (
         <p
@@ -258,21 +267,23 @@ function MatchesSection({
       ) : (
         <ul className="space-y-2" data-testid="league-detail-matches-list">
           {matches.map((match) => (
-            <li
-              key={match.id}
-              data-testid={`league-detail-match-row-${match.id}`}
-              className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-zinc-100">
-                  {match.sequenceNumber !== null ? `第 ${match.sequenceNumber} 節 ` : ''}
-                  {match.name}
-                </p>
-                <p className="mt-1 truncate text-xs text-zinc-500">
-                  対局 {match.gameCount} 件
-                  {match.heldAt === null ? '' : ` / ${formatDate(match.heldAt)}`}
-                </p>
-              </div>
+            <li key={match.id} data-testid={`league-detail-match-row-${match.id}`}>
+              <Link
+                to="/matches/$matchId"
+                params={{ matchId: match.id }}
+                className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 transition-colors hover:border-emerald-500/70"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-zinc-100">
+                    {match.sequenceNumber !== null ? `第 ${match.sequenceNumber} 節 ` : ''}
+                    {match.name}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-zinc-500">
+                    対局 {match.gameCount} 件
+                    {match.heldAt === null ? '' : ` / ${formatDate(match.heldAt)}`}
+                  </p>
+                </div>
+              </Link>
             </li>
           ))}
         </ul>

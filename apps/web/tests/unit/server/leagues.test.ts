@@ -86,7 +86,12 @@ describe('getLeagueDetailHandler', () => {
     expect(detail?.name).toBe('2026 春シーズン');
     expect(detail?.matches).toHaveLength(1);
     expect(detail?.recentGames).toHaveLength(1);
-    expect(detail?.ranking).toEqual([]); // GameResult is not modelled yet.
+    // Issue #19 wired GameResult-backed ranking into the projection. The
+    // seeded Game has four results (たかし / なお / ゆうき / みき) so the
+    // ranking surfaces all four players, top-of-list at たかし.
+    expect(detail?.ranking).toHaveLength(4);
+    expect(detail?.ranking?.[0]?.playerName).toBe('たかし');
+    expect(detail?.ranking?.[0]?.topCount).toBe(1);
     expect(detail?.publicSlug).toBeDefined();
   });
 });

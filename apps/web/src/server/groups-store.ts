@@ -35,11 +35,13 @@
 
 import type {
   Game,
+  GameResult,
   Group,
   Invitation,
   League,
   Match,
   NewGame,
+  NewGameResult,
   NewGroup,
   NewInvitation,
   NewLeague,
@@ -69,6 +71,7 @@ export interface InMemoryStoreShape {
   leagues: NewLeague;
   matches: NewMatch;
   invitations: NewInvitation;
+  gameResults: NewGameResult;
 }
 
 export interface GroupServerStore {
@@ -79,6 +82,13 @@ export interface GroupServerStore {
   leagues: Map<string, League>;
   matches: Map<string, Match>;
   invitations: Map<string, Invitation>;
+  /**
+   * Per-game per-player outcome rows. Keyed by `${gameId}::${playerId}` so a
+   * Game's full result can be re-read by walking the map. The Drizzle schema
+   * keys these on `(gameId, playerId)` composite PK — we hash that into a
+   * string here to keep the Map interface uniform with the other entities.
+   */
+  gameResults: Map<string, GameResult>;
   /**
    * Set of owner ids that have already had their dev seed materialised. Kept
    * as a `Set` so the seed runs at most once per owner even across many
@@ -104,8 +114,17 @@ function createEmptyStore(): GroupServerStore {
     leagues: new Map(),
     matches: new Map(),
     invitations: new Map(),
+    gameResults: new Map(),
     seededOwnerIds: new Set(),
   };
+}
+
+/**
+ * Composite key helper for `gameResults`. Exported so server modules use a
+ * single canonical form when reading / writing this map.
+ */
+export function gameResultKey(gameId: string, playerId: string): string {
+  return `${gameId}::${playerId}`;
 }
 
 export function getGroupServerStore(): GroupServerStore {
@@ -256,6 +275,44 @@ export function seedDevDataIfEmpty(ownerId: string): void {
       ...seededGame,
       matchId,
       leagueId,
+    });
+  }
+
+  // Seed GameResult rows so the S7 ranking / S9 順位表 has populated data on
+  // first paint. Four players, raw scores sum to 100000 (= startingScore ×
+  // players), with explicit ranks; we hand-compute points here using the
+  // UMA_10_30 + oka math so the seed survives any future calculator drift —
+  // tests still pin the calculator independently.
+  //
+  // たかし 45000 → 1st
+  // なお    32000 → 2nd
+  // ゆうき 18000 → 3rd
+  // みき     5000 → 4th
+  // points (UMA_10_30, oka 20 = (30000-25000)*4 /1000):
+  //   1st: (45000-30000)/1000 + 30 + 20 = 15 + 30 + 20 = 65
+  //   2nd: (32000-30000)/1000 + 10      =  2 + 10      = 12
+  //   3rd: (18000-30000)/1000 - 10      = -12 - 10     = -22
+  //   4th: ( 5000-30000)/1000 - 30      = -25 - 30     = -55
+  const seedGameResults: ReadonlyArray<{
+    playerSuffix: number;
+    raw: number;
+    rank: number;
+    pts: number;
+  }> = [
+    { playerSuffix: 1, raw: 45000, rank: 1, pts: 65 },
+    { playerSuffix: 2, raw: 32000, rank: 2, pts: 12 },
+    { playerSuffix: 3, raw: 18000, rank: 3, pts: -22 },
+    { playerSuffix: 4, raw: 5000, rank: 4, pts: -55 },
+  ];
+  for (const r of seedGameResults) {
+    const playerId = `dev-${ownerId}-friday-player-${r.playerSuffix}`;
+    store.gameResults.set(gameResultKey(gameId, playerId), {
+      gameId,
+      playerId,
+      rawScore: r.raw,
+      points: r.pts,
+      rank: r.rank,
+      tobiRole: null,
     });
   }
 
