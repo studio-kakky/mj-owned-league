@@ -290,11 +290,51 @@ export async function getLeagueDetailHandler(
   const defaultRuleset: LeagueRulesetOption | null =
     defaultRulesetRow === null ? null : projectRulesetOption(defaultRulesetRow, groupDefault);
 
-  // Ranking is stubbed empty until GameResult rows land. We keep the field
-  // populated as `[]` so the screen renders the empty-state copy instead of
-  // skipping the section entirely. The shape is locked, so wiring real data
-  // later is a server-only change.
-  const ranking: ReadonlyArray<LeagueRankingRow> = [];
+  // Ranking is now computed from GameResult rows (Issue #19). We walk every
+  // GameResult whose Game is part of this League, aggregating per-player
+  // totals + topCount / lastCount. The detail screen sorts visually but we
+  // also pre-sort here so the response shape is stable.
+  const playerNameById = new Map<string, string>();
+  for (const p of store.players.values()) {
+    if (p.groupId === group.id) playerNameById.set(p.id, p.name);
+  }
+  const lastRank = league.format.startsWith('3P') ? 3 : 4;
+  const rankingAcc = new Map<
+    string,
+    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
+  >();
+  const leagueGameIds = new Set(games.map((g) => g.id));
+  for (const result of store.gameResults.values()) {
+    if (!leagueGameIds.has(result.gameId)) continue;
+    const entry = rankingAcc.get(result.playerId) ?? {
+      gameCount: 0,
+      totalPoints: 0,
+      topCount: 0,
+      lastCount: 0,
+    };
+    entry.gameCount += 1;
+    entry.totalPoints += result.points;
+    if (result.rank === 1) entry.topCount += 1;
+    if (result.rank === lastRank) entry.lastCount += 1;
+    rankingAcc.set(result.playerId, entry);
+  }
+  const ranking: ReadonlyArray<LeagueRankingRow> = [...rankingAcc.entries()]
+    .map(
+      ([playerId, entry]): LeagueRankingRow => ({
+        playerId,
+        playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
+        gameCount: entry.gameCount,
+        totalPoints: entry.totalPoints,
+        averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
+        topCount: entry.topCount,
+        lastCount: entry.lastCount,
+      }),
+    )
+    .sort((a, b) => {
+      if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+      if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
+      return a.playerName.localeCompare(b.playerName);
+    });
 
   return {
     id: league.id,

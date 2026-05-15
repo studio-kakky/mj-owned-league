@@ -72,11 +72,21 @@ describe('LeagueDetailScreen', () => {
     expect(screen.getByTestId('league-detail-game-row-game-1')).toBeInTheDocument();
   });
 
-  it('renders a "マッチを追加" link pointing at /matches/new with the league id (Issue #20)', () => {
+  it('renders a "マッチを追加" link pointing at /matches/new with the league id (Issue #20 / #19)', () => {
     render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
     const link = screen.getByTestId('league-detail-match-create-link');
     expect(link).toHaveAttribute('href', '/matches/new');
-    expect(link).toHaveTextContent('マッチを追加');
+    // Issue #19 split the section header into a 「一覧」 link + 「追加」
+    // CTA so the label collapsed to just 「追加」 — the destination is
+    // still S10. The 「一覧」 sibling lives at /matches?leagueId=…
+    expect(link).toHaveTextContent('追加');
+  });
+
+  it('also renders a "一覧" link to the League-scoped Match list (Issue #19)', () => {
+    render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
+    const link = screen.getByTestId('league-detail-match-list-link');
+    expect(link).toHaveAttribute('href', '/matches');
+    expect(link).toHaveTextContent('一覧');
   });
 
   it('shows the empty-state copy for the ranking section when no rows are present', () => {
