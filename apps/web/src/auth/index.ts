@@ -2,20 +2,23 @@
  * Better Auth bootstrap for the Workers runtime
  * (`docs/docs/05-tech-stack.md` § 認証, `docs/docs/03-user-flow.md` § F1).
  *
- * Scope of this module (per Issue #7):
+ * Scope of this module (per Issue #7 + Issue #15):
  *   - Wire Better Auth's Drizzle adapter to our D1-backed Drizzle client.
  *   - Register Google as the only OAuth provider.
  *   - Disable email/password sign-up (`enabled: false`) — the only path to an
  *     account is via Google OAuth, gated upstream by an invitation token.
  *   - Mount on `/api/auth/*` (Better Auth's default `basePath`).
+ *   - Bridge the Better Auth `user` row to a domain `owners` row via
+ *     `databaseHooks.user.create.after` + `session.create.after`. This is the
+ *     boundary documented in `02-domain-model.md` § Owner: the auth tables
+ *     are owned by Better Auth, and every authenticated user must have a
+ *     matching `owners` row so the domain side (Group / Player / etc.) can
+ *     reference a stable owner id.
  *
  * Out of scope (deliberately deferred to a follow-up issue):
  *   - Real Google OAuth Client ID / Secret values. The Worker reads them from
  *     env vars declared as required; `.dev.vars.example` ships with empty
  *     placeholders so local boot works but real sign-in does not.
- *   - Bridging the Better Auth `user` row to a domain `owners` row. The
- *     hook that does that work lands when the screen for accepting an
- *     invitation is implemented.
  *
  * Why a factory and not a singleton:
  *   The Workers runtime gives each request its own `env` instance, and the
@@ -27,8 +30,10 @@
 
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { eq } from 'drizzle-orm';
 import { createDb } from '../db/client';
 import { accounts, sessions, users, verifications } from '../db/schema';
+import { upsertOwnerForUser } from './ensure-owner';
 
 /**
  * Shape of the env bindings that Better Auth needs. The Worker entry imports
@@ -94,6 +99,53 @@ export const createAuth = (env: AuthEnv) => {
         // Plain string is accepted (the array form is for multi-tenant rotations).
         clientId: env.GOOGLE_OAUTH_CLIENT_ID,
         clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+      },
+    },
+    // Bridge `user` → `owners` (Issue #15 follow-up to #7 / #11).
+    //
+    // `user.create.after` covers the brand-new sign-up path. The Better Auth
+    // `user` row has just been written; we create the matching `owners` row in
+    // the same Worker invocation while D1 is still bound. We pass the same
+    // `db` instance so the write piggy-backs on the active request.
+    //
+    // `session.create.after` is the defensive fallback: it runs on every
+    // session creation (sign-in *and* refresh), so any pre-existing
+    // Better Auth user who signed up before this hook landed still gets an
+    // `owners` row materialised on their next login. The upsert is idempotent
+    // by primary key (`owners.id = user.id`), so the cost of the redundant
+    // write on subsequent logins is exactly one D1 round trip that returns
+    // "no change" — acceptable for a per-login event.
+    //
+    // Why we don't do this from the client (e.g. in `_owner.tsx` `beforeLoad`):
+    //   - The browser cannot reach D1; it would need a server function, and
+    //     the TanStack Start ↔ Workers integration that would let a server
+    //     function see `env.DB` is not yet wired (see `worker/index.ts`).
+    //   - Better Auth's hooks already run in the Worker isolate, so this is
+    //     the cheapest correct place.
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            await upsertOwnerForUser(db, { id: user.id, email: user.email });
+          },
+        },
+      },
+      session: {
+        create: {
+          after: async (session) => {
+            // Session rows carry `userId` but not the user's email. We fetch
+            // the user record (cheap; Better Auth itself just wrote it) and
+            // upsert from there. The upsert is keyed on `owners.id = user.id`
+            // so duplicate calls are no-ops.
+            const [user] = await db
+              .select({ id: users.id, email: users.email })
+              .from(users)
+              .where(eq(users.id, session.userId))
+              .limit(1);
+            if (!user) return;
+            await upsertOwnerForUser(db, user);
+          },
+        },
       },
     },
     // We don't open the door to additional accidental writes via plugins for

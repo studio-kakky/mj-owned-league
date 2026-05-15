@@ -1,99 +1,95 @@
 /**
  * `/groups` — S4 Group 一覧 + S5 Group 作成 (`04-screens.md` § S4 / S5).
  *
- * Wiring strategy (and the reason this file is short):
+ * Wiring strategy:
  *
- *   The screen itself (`GroupsScreen`) is purely presentational — it takes
- *   a `GroupListItem[]` plus three callbacks and emits no I/O. The "real"
- *   data path is server-function-backed and ends in Drizzle/D1, but the
- *   server-function plumbing is still TODO (see the comment at the top of
- *   `apps/web/worker/index.ts`: the full TanStack Start ↔ Workers
- *   integration "with the D1 binding plumbed through to server functions
- *   [is] tracked as a follow-up issue"). Until that exists we cannot
- *   meaningfully `await groupService.listByOwner(...)` from a route loader.
+ *   This file is the loader / action boundary for the screen. All data
+ *   reads and writes go through TanStack Start server functions declared in
+ *   `src/server/groups.ts`:
  *
- *   So this route uses a `useState`-backed in-memory store for the
- *   lifetime of the tab. The store is intentionally bound to the browser
- *   session (not to the worker / D1) so the developer can verify the
- *   create / edit / delete flow end-to-end at `pnpm --filter web dev`
- *   without standing up the (yet-to-land) server function. When the
- *   server-function ticket merges, only this file needs to change —
- *   `GroupsScreen` and the service layer already match the production
- *   shape.
+ *     - `listGroupsServerFn`  → route `loader`. The `GroupsScreen` reads the
+ *                               result via `Route.useLoaderData()`.
+ *     - `createGroupServerFn` → invoked from the create modal.
+ *     - `renameGroupServerFn` → invoked from the edit modal.
+ *     - `deleteGroupServerFn` → invoked from the delete-confirm modal.
  *
- *   The store seeds with two example Groups (one with a fabricated
- *   `hasHistory: true` so the delete-modal "履歴があるため削除不可" copy
- *   is reachable during manual QA). The seed is local development scaffolding
- *   only; production data comes from D1 via the loader.
+ *   After every mutation we call `router.invalidate()` so the loader re-fetches
+ *   and the list reflects the new state. The screen component itself
+ *   (`GroupsScreen`) remains presentational — it never imports the server
+ *   functions; this route is the only place that crosses the RPC boundary.
+ *
+ *   The previous iteration of this file held the data in `useState` with a
+ *   hard-coded dev seed. That has been replaced: even though the server
+ *   functions are currently backed by an in-process Map (see
+ *   `src/server/groups.ts` for why the D1-backed swap is still pending),
+ *   *the data lives on the server side of the RPC*. The client cannot
+ *   bypass the server functions to mutate it.
+ *
+ *   Owner identity (`ownerId`) comes from the parent `_owner` layout's
+ *   `beforeLoad`, which we surface via `Route.useRouteContext()` for client
+ *   mutations and via `loaderDeps` for the loader.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
-import type { GroupListItem } from '../../components/groups';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
+import { useCallback } from 'react';
 import { GroupsScreen } from '../../components/groups';
+import {
+  createGroupServerFn,
+  deleteGroupServerFn,
+  listGroupsServerFn,
+  renameGroupServerFn,
+} from '../../server/groups';
 
 export const Route = createFileRoute('/_owner/groups')({
+  // The active owner id comes from the `_owner` parent layout's
+  // `beforeLoad`, which is exposed on `context.ownerSession`. TanStack Router
+  // re-runs the loader when the route is invalidated (after mutations
+  // below), which is exactly the cadence we want.
+  loader: async ({ context }) => {
+    const items = await listGroupsServerFn({
+      data: { ownerId: context.ownerSession.ownerId },
+    });
+    return { items };
+  },
   component: GroupsPage,
 });
 
-/**
- * Seed data used only during development until the route loader wires up
- * the real D1-backed query. Kept inside the route module (not exported) so
- * no other code accidentally depends on it.
- */
-const DEV_SEED: ReadonlyArray<GroupListItem> = [
-  {
-    id: 'dev-group-1',
-    name: '金曜定例会',
-    playerCount: 6,
-    leagueCount: 1,
-    lastPlayedAt: '2026-05-08T00:00:00.000Z',
-    // `true` so the delete-modal "履歴があるため削除不可" branch is
-    // discoverable during manual QA.
-    hasHistory: true,
-  },
-  {
-    id: 'dev-group-2',
-    name: '会社の同期会',
-    playerCount: 4,
-    leagueCount: 0,
-    lastPlayedAt: null,
-    hasHistory: false,
-  },
-];
-
 function GroupsPage() {
-  const [groups, setGroups] = useState<ReadonlyArray<GroupListItem>>(DEV_SEED);
+  const router = useRouter();
+  const { ownerSession } = Route.useRouteContext();
+  const { items } = Route.useLoaderData();
 
-  const handleCreate = useCallback(async (name: string) => {
-    setGroups((prev) => [
-      ...prev,
-      {
-        // `crypto.randomUUID()` is available in modern browsers + Workers;
-        // we cast through `string` because the type returned is a literal
-        // template type that's noisy in our `GroupListItem.id: string`.
-        id: globalThis.crypto.randomUUID(),
-        name,
-        playerCount: 0,
-        leagueCount: 0,
-        lastPlayedAt: null,
-        // Brand-new Group has no history yet.
-        hasHistory: false,
-      },
-    ]);
-  }, []);
+  const handleCreate = useCallback(
+    async (name: string) => {
+      await createGroupServerFn({ data: { ownerId: ownerSession.ownerId, name } });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
 
-  const handleRename = useCallback(async (groupId: string, name: string) => {
-    setGroups((prev) => prev.map((group) => (group.id === groupId ? { ...group, name } : group)));
-  }, []);
+  const handleRename = useCallback(
+    async (groupId: string, name: string) => {
+      await renameGroupServerFn({
+        data: { ownerId: ownerSession.ownerId, groupId, name },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
 
-  const handleDelete = useCallback(async (groupId: string) => {
-    setGroups((prev) => prev.filter((group) => group.id !== groupId));
-  }, []);
+  const handleDelete = useCallback(
+    async (groupId: string) => {
+      await deleteGroupServerFn({
+        data: { ownerId: ownerSession.ownerId, groupId },
+      });
+      await router.invalidate();
+    },
+    [ownerSession.ownerId, router],
+  );
 
   return (
     <GroupsScreen
-      groups={groups}
+      groups={items}
       onCreateGroup={handleCreate}
       onRenameGroup={handleRename}
       onDeleteGroup={handleDelete}
