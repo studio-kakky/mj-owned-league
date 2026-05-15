@@ -33,9 +33,9 @@ mj-owned-league の Issue 1 件を **merge されるまで自律的に完遂** �
 
 ### Phase 1. Iteration 1 — 初回実装
 
-1. Skill: `do-issue` を「Issue #<N> をやって。マージまで」と指示して起動
-   - これにより do-issue は実装 → PR 作成 → 続けて do-pr-review に連鎖する想定
-   - ただし issue-buster からは「do-issue だけ」「do-pr-review だけ」を別々に呼ぶ運用にする（結果の判定をエージェント側で持つため）
+1. Skill: `do-issue` を「Issue #<N> をやって」と指示して起動
+   - `do-issue` は **PR 作成まで** で終了する。レビュー・マージへの連鎖はしない
+   - issue-buster は `do-issue` と `do-pr-review` を別々に呼び、各段階の結果判定をエージェント側で持つ
 2. PR の作成を確認: `gh pr list --head <branch>` で当該 PR を取得
 3. Skill: `do-pr-review` を「PR #<M> をレビューしてマージ」と指示して起動
 4. PR の最終状態を `gh pr view <M> --json state,mergedAt` で確認
