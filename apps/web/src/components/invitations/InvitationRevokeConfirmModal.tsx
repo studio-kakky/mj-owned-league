@@ -11,7 +11,7 @@
  */
 
 import { useId, useState } from 'react';
-import { Modal } from '../../groups/Modal';
+import { Modal } from '../groups/Modal';
 
 export interface InvitationRevokeConfirmModalProps {
   open: boolean;

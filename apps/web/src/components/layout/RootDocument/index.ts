@@ -1,1 +1,0 @@
-export { RootDocument } from './RootDocument';

@@ -1,1 +1,0 @@
-export { OwnerBottomNav } from './OwnerBottomNav';

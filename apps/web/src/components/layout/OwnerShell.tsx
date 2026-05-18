@@ -18,10 +18,10 @@
  */
 
 import { type ReactNode, useState } from 'react';
-import { GroupSwitcherSheet } from '../GroupSwitcherSheet';
-import { OwnerBottomNav } from '../OwnerBottomNav';
-import { OwnerHeader } from '../OwnerHeader';
-import type { GroupSummary, OwnerSession } from '../types';
+import { GroupSwitcherSheet } from './GroupSwitcherSheet';
+import { OwnerBottomNav } from './OwnerBottomNav';
+import { OwnerHeader } from './OwnerHeader';
+import type { GroupSummary, OwnerSession } from './types';
 
 export interface OwnerShellProps {
   /** The signed-in Owner, or `null` for guest renders. */

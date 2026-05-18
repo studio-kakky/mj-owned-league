@@ -16,7 +16,7 @@
  */
 
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { Modal } from '../../groups/Modal';
+import { Modal } from '../groups/Modal';
 
 export interface InvitationFormModalProps {
   open: boolean;

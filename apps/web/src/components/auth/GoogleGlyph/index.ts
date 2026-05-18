@@ -1,1 +1,0 @@
-export { GoogleGlyph } from './GoogleGlyph';

@@ -10,7 +10,7 @@
  */
 
 import { Link } from '@tanstack/react-router';
-import type { GroupSummary, OwnerSession } from '../types';
+import type { GroupSummary, OwnerSession } from './types';
 
 export interface OwnerHeaderProps {
   session: OwnerSession | null;

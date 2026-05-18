@@ -40,14 +40,14 @@
 
 import { Link } from '@tanstack/react-router';
 import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { LEAGUE_FORMATS, type LeagueFormat } from '../../../db/schema';
+import { LEAGUE_FORMATS, type LeagueFormat } from '../../db/schema';
 import type {
   MatchCreateContext,
   MatchCreateGroupOption,
   MatchCreateInput,
   MatchCreateLeagueOption,
   MatchCreateRulesetOption,
-} from '../types';
+} from './types';
 
 export interface MatchCreateScreenProps {
   data: MatchCreateContext;

@@ -8,8 +8,8 @@
  */
 
 import { useId, useState } from 'react';
-import { Modal } from '../../groups/Modal';
-import type { MatchGameRow } from '../detail-types';
+import { Modal } from '../groups/Modal';
+import type { MatchGameRow } from './detail-types';
 
 export interface GameDeleteConfirmModalProps {
   open: boolean;

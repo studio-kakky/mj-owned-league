@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { GroupSummary } from '../types';
+import type { GroupSummary } from './types';
 
 export interface GroupSwitcherSheetProps {
   /** Whether the sheet is currently visible. */
