@@ -11,6 +11,12 @@ import { createFileRoute } from '@tanstack/react-router';
 import { PublicNotFoundView, PublicPlayerScreen } from '../../components/public';
 import { getPublicPlayerServerFn } from '../../server/public';
 
+const PublicLeaguePlayerPage = () => {
+  const { data } = Route.useLoaderData();
+  if (data === null) return <PublicNotFoundView />;
+  return <PublicPlayerScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_public/l/$publicSlug/players/$playerId')({
   loader: async ({ params }) => {
     const data = await getPublicPlayerServerFn({
@@ -20,9 +26,3 @@ export const Route = createFileRoute('/_public/l/$publicSlug/players/$playerId')
   },
   component: PublicLeaguePlayerPage,
 });
-
-function PublicLeaguePlayerPage() {
-  const { data } = Route.useLoaderData();
-  if (data === null) return <PublicNotFoundView />;
-  return <PublicPlayerScreen data={data} />;
-}

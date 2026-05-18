@@ -45,21 +45,13 @@ import { signIn } from '../auth/client';
 import { InviteAcceptScreen } from '../components/invite';
 import { verifyInvitationServerFn } from '../server/invitation-accept';
 
-export const Route = createFileRoute('/invitations/accept/$token')({
-  loader: async ({ params }) => {
-    const verification = await verifyInvitationServerFn({ data: { token: params.token } });
-    return { verification };
-  },
-  component: InviteAcceptPage,
-});
-
 /**
  * `sessionStorage` key for the in-flight token. Exported so the completion
  * route can read it without re-deriving the literal.
  */
 export const INVITE_TOKEN_STORAGE_KEY = 'janroku.invitation.pendingToken';
 
-function InviteAcceptPage() {
+const InviteAcceptPage = () => {
   const { token } = Route.useParams();
   const { verification } = Route.useLoaderData();
 
@@ -85,4 +77,12 @@ function InviteAcceptPage() {
   };
 
   return <InviteAcceptScreen verification={verification} onAccept={handleAccept} />;
-}
+};
+
+export const Route = createFileRoute('/invitations/accept/$token')({
+  loader: async ({ params }) => {
+    const verification = await verifyInvitationServerFn({ data: { token: params.token } });
+    return { verification };
+  },
+  component: InviteAcceptPage,
+});

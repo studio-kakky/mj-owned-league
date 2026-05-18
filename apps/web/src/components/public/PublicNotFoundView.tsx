@@ -23,7 +23,7 @@ export interface PublicNotFoundViewProps {
   description?: string;
 }
 
-export function PublicNotFoundView({ description }: PublicNotFoundViewProps) {
+export const PublicNotFoundView = ({ description }: PublicNotFoundViewProps) => {
   return (
     <section className="space-y-3 text-center" data-testid="public-not-found">
       <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">404</p>
@@ -33,4 +33,4 @@ export function PublicNotFoundView({ description }: PublicNotFoundViewProps) {
       </p>
     </section>
   );
-}
+};

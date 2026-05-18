@@ -31,7 +31,27 @@ const NAV_ITEMS: ReadonlyArray<OwnerBottomNavItem> = [
   { label: '設定', to: '/settings' },
 ];
 
-export function OwnerBottomNav() {
+/**
+ * Inline glyph placeholders. We avoid pulling in an icon library for the
+ * shell scaffold; once the icon system is decided (Issue TBD) replace these
+ * with real SVG components.
+ */
+const iconFor = (label: string): string => {
+  switch (label) {
+    case 'ホーム':
+      return '⌂';
+    case 'リーグ':
+      return '◇';
+    case 'マッチ':
+      return '◷';
+    case '設定':
+      return '⚙';
+    default:
+      return '•';
+  }
+};
+
+export const OwnerBottomNav = () => {
   return (
     <nav
       aria-label="メインナビゲーション"
@@ -57,24 +77,4 @@ export function OwnerBottomNav() {
       </ul>
     </nav>
   );
-}
-
-/**
- * Inline glyph placeholders. We avoid pulling in an icon library for the
- * shell scaffold; once the icon system is decided (Issue TBD) replace these
- * with real SVG components.
- */
-function iconFor(label: string): string {
-  switch (label) {
-    case 'ホーム':
-      return '⌂';
-    case 'リーグ':
-      return '◇';
-    case 'マッチ':
-      return '◷';
-    case '設定':
-      return '⚙';
-    default:
-      return '•';
-  }
-}
+};

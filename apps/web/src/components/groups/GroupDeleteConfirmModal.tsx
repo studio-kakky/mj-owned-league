@@ -39,13 +39,13 @@ export interface GroupDeleteConfirmModalProps {
   onConfirm: () => void | Promise<void>;
 }
 
-export function GroupDeleteConfirmModal({
+export const GroupDeleteConfirmModal = ({
   open,
   groupName,
   hasHistory,
   onClose,
   onConfirm,
-}: GroupDeleteConfirmModalProps) {
+}: GroupDeleteConfirmModalProps) => {
   const titleId = useId();
   const [isDeleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,4 +127,4 @@ export function GroupDeleteConfirmModal({
       </div>
     </Modal>
   );
-}
+};

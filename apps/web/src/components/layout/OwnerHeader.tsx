@@ -18,7 +18,7 @@ export interface OwnerHeaderProps {
   onOpenGroupSwitcher: () => void;
 }
 
-export function OwnerHeader({ session, activeGroup, onOpenGroupSwitcher }: OwnerHeaderProps) {
+export const OwnerHeader = ({ session, activeGroup, onOpenGroupSwitcher }: OwnerHeaderProps) => {
   const isAuthenticated = session !== null;
 
   return (
@@ -47,4 +47,4 @@ export function OwnerHeader({ session, activeGroup, onOpenGroupSwitcher }: Owner
       </div>
     </header>
   );
-}
+};

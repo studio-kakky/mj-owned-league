@@ -1,6 +1,14 @@
-import { createRootRoute, HeadContent, Outlet, Scripts } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { createRootRoute, Outlet } from '@tanstack/react-router';
+import { RootDocument } from '../components/layout/RootDocument';
 import appCss from '../styles/app.css?url';
+
+const RootComponent = () => {
+  return (
+    <RootDocument>
+      <Outlet />
+    </RootDocument>
+  );
+};
 
 export const Route = createRootRoute({
   head: () => ({
@@ -13,25 +21,3 @@ export const Route = createRootRoute({
   }),
   component: RootComponent,
 });
-
-function RootComponent() {
-  return (
-    <RootDocument>
-      <Outlet />
-    </RootDocument>
-  );
-}
-
-function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <html lang="ja">
-      <head>
-        <HeadContent />
-      </head>
-      <body className="bg-zinc-950 text-zinc-100 antialiased">
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}

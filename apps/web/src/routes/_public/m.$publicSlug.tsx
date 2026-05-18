@@ -16,6 +16,14 @@ import { createFileRoute } from '@tanstack/react-router';
 import { PublicMatchScreen, PublicNotFoundView } from '../../components/public';
 import { getPublicMatchServerFn } from '../../server/public';
 
+const PublicMatchPage = () => {
+  const { data } = Route.useLoaderData();
+  if (data === null) {
+    return <PublicNotFoundView description="League 外 Match の公開 URL は MVP では未対応です。" />;
+  }
+  return <PublicMatchScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_public/m/$publicSlug')({
   loader: async ({ params }) => {
     const data = await getPublicMatchServerFn({ data: { publicSlug: params.publicSlug } });
@@ -23,11 +31,3 @@ export const Route = createFileRoute('/_public/m/$publicSlug')({
   },
   component: PublicMatchPage,
 });
-
-function PublicMatchPage() {
-  const { data } = Route.useLoaderData();
-  if (data === null) {
-    return <PublicNotFoundView description="League 外 Match の公開 URL は MVP では未対応です。" />;
-  }
-  return <PublicMatchScreen data={data} />;
-}

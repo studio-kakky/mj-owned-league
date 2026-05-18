@@ -62,74 +62,16 @@ export interface DashboardHandlerDeps {
  */
 export const DASHBOARD_RECENT_MATCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-/**
- * Builds the {@link DashboardData} payload for a single Owner.
- *
- * Steps, in order:
- *   1. List the Owner's Groups.
- *   2. Pull every Game / League / Match / Invitation that belongs to those
- *      Groups (the in-memory store is small enough that scanning is cheap;
- *      with D1 this becomes one `WHERE owner_id IN (...)` per table).
- *   3. Project each section into its display shape, trimming the long
- *      sections to {@link DASHBOARD_RECENT_LIMIT}.
- *   4. Count PENDING invitations (status filter + expiry filter).
- */
-export async function dashboardHandler(
-  input: DashboardInput,
-  deps: DashboardHandlerDeps = {},
-): Promise<DashboardData> {
-  const now = deps.now ?? (() => new Date());
-  const nowMs = now().getTime();
-
-  // Materialise the dev seed on the first call per owner — same hook the
-  // `/groups` handler uses. Calling it from both places is safe because the
-  // seed is gated by `seededOwnerIds.has(ownerId)`.
-  seedDevDataIfEmpty(input.ownerId);
-
-  const store = getGroupServerStore();
-
-  const groups = [...store.groups.values()].filter((g) => g.ownerId === input.ownerId);
-  const groupIds = new Set(groups.map((g) => g.id));
-  const groupNameById = new Map(groups.map((g) => [g.id, g.name] as const));
-
-  const games = [...store.games.values()].filter((g) => groupIds.has(g.groupId));
-  const leagues = [...store.leagues.values()].filter((l) => groupIds.has(l.groupId));
-  const leagueNameById = new Map(leagues.map((l) => [l.id, l.name] as const));
-  const matches = [...store.matches.values()].filter((m) => groupIds.has(m.groupId));
-
-  // Player counts per group for the group cards. Filtering `isActive` here is
-  // intentional — the S3 spec says "Group のメンバー数" which we read as the
-  // currently-active roster, not historical.
-  const playersByGroup = new Map<string, number>();
-  for (const player of store.players.values()) {
-    if (!groupIds.has(player.groupId)) continue;
-    if (!player.isActive) continue;
-    playersByGroup.set(player.groupId, (playersByGroup.get(player.groupId) ?? 0) + 1);
-  }
-
-  return {
-    groups: projectGroupCards(groups, games, playersByGroup),
-    activeLeagues: projectActiveLeagues(leagues, matches, games, groupNameById),
-    activeMatches: projectActiveMatches(matches, games, groupNameById, leagueNameById, nowMs),
-    recentGames: projectRecentGames(games, groupNameById, leagueNameById, matches),
-    pendingInvitationCount: countPendingInvitations(store.invitations, input.ownerId, nowMs),
-  };
-}
-
-export const getDashboardServerFn = createServerFn({ method: 'GET' })
-  .inputValidator(dashboardInput)
-  .handler(({ data }) => dashboardHandler(data));
-
 // ---------------------------------------------------------------------------
 // Projections — kept as small top-level functions so they read top-to-bottom
 // and each one is independently testable.
 // ---------------------------------------------------------------------------
 
-function projectGroupCards(
+const projectGroupCards = (
   groups: ReadonlyArray<Group>,
   games: ReadonlyArray<Game>,
   playersByGroup: ReadonlyMap<string, number>,
-): ReadonlyArray<DashboardGroupCard> {
+): ReadonlyArray<DashboardGroupCard> => {
   return groups.map((group): DashboardGroupCard => {
     let lastPlayedAt: string | null = null;
     for (const game of games) {
@@ -145,14 +87,14 @@ function projectGroupCards(
       lastPlayedAt,
     };
   });
-}
+};
 
-function projectActiveLeagues(
+const projectActiveLeagues = (
   leagues: ReadonlyArray<League>,
   matches: ReadonlyArray<Match>,
   games: ReadonlyArray<Game>,
   groupNameById: ReadonlyMap<string, string>,
-): ReadonlyArray<DashboardActiveLeague> {
+): ReadonlyArray<DashboardActiveLeague> => {
   const rows = leagues.map((league): DashboardActiveLeague => {
     let matchCount = 0;
     for (const m of matches) {
@@ -193,15 +135,32 @@ function projectActiveLeagues(
       return a.lastPlayedAt > b.lastPlayedAt ? -1 : 1;
     })
     .slice(0, DASHBOARD_RECENT_LIMIT);
-}
+};
 
-function projectActiveMatches(
+const isActiveMatch = (
+  match: Match,
+  gameCountByMatch: ReadonlyMap<string, number>,
+  todayIso: string,
+  recentWindowStartMs: number,
+): boolean => {
+  // Match with a future-or-today heldAt is active.
+  if (match.heldAt !== null && match.heldAt >= todayIso) return true;
+  // Match without games yet is active regardless of date (likely a draft).
+  if ((gameCountByMatch.get(match.id) ?? 0) === 0) return true;
+  // Otherwise treat "recently created" as active. createdAt is ISO 8601
+  // text; Date.parse handles both `YYYY-MM-DD` and full timestamps.
+  const createdAtMs = Date.parse(match.createdAt);
+  if (!Number.isNaN(createdAtMs) && createdAtMs >= recentWindowStartMs) return true;
+  return false;
+};
+
+const projectActiveMatches = (
   matches: ReadonlyArray<Match>,
   games: ReadonlyArray<Game>,
   groupNameById: ReadonlyMap<string, string>,
   leagueNameById: ReadonlyMap<string, string>,
   nowMs: number,
-): ReadonlyArray<DashboardActiveMatch> {
+): ReadonlyArray<DashboardActiveMatch> => {
   const gameCountByMatch = new Map<string, number>();
   for (const g of games) {
     if (g.matchId === null) continue;
@@ -241,31 +200,14 @@ function projectActiveMatches(
       return 0;
     })
     .slice(0, DASHBOARD_RECENT_LIMIT);
-}
+};
 
-function isActiveMatch(
-  match: Match,
-  gameCountByMatch: ReadonlyMap<string, number>,
-  todayIso: string,
-  recentWindowStartMs: number,
-): boolean {
-  // Match with a future-or-today heldAt is active.
-  if (match.heldAt !== null && match.heldAt >= todayIso) return true;
-  // Match without games yet is active regardless of date (likely a draft).
-  if ((gameCountByMatch.get(match.id) ?? 0) === 0) return true;
-  // Otherwise treat "recently created" as active. createdAt is ISO 8601
-  // text; Date.parse handles both `YYYY-MM-DD` and full timestamps.
-  const createdAtMs = Date.parse(match.createdAt);
-  if (!Number.isNaN(createdAtMs) && createdAtMs >= recentWindowStartMs) return true;
-  return false;
-}
-
-function projectRecentGames(
+const projectRecentGames = (
   games: ReadonlyArray<Game>,
   groupNameById: ReadonlyMap<string, string>,
   leagueNameById: ReadonlyMap<string, string>,
   matches: ReadonlyArray<Match>,
-): ReadonlyArray<DashboardRecentGame> {
+): ReadonlyArray<DashboardRecentGame> => {
   const matchNameById = new Map(matches.map((m) => [m.id, m.name] as const));
 
   return games
@@ -284,13 +226,13 @@ function projectRecentGames(
         playedAt: game.playedAt,
       }),
     );
-}
+};
 
-function countPendingInvitations(
+const countPendingInvitations = (
   invitations: ReadonlyMap<string, Invitation>,
   ownerId: string,
   nowMs: number,
-): number {
+): number => {
   let count = 0;
   for (const inv of invitations.values()) {
     if (inv.issuedByOwnerId !== ownerId) continue;
@@ -303,4 +245,62 @@ function countPendingInvitations(
     count++;
   }
   return count;
-}
+};
+
+/**
+ * Builds the {@link DashboardData} payload for a single Owner.
+ *
+ * Steps, in order:
+ *   1. List the Owner's Groups.
+ *   2. Pull every Game / League / Match / Invitation that belongs to those
+ *      Groups (the in-memory store is small enough that scanning is cheap;
+ *      with D1 this becomes one `WHERE owner_id IN (...)` per table).
+ *   3. Project each section into its display shape, trimming the long
+ *      sections to {@link DASHBOARD_RECENT_LIMIT}.
+ *   4. Count PENDING invitations (status filter + expiry filter).
+ */
+export const dashboardHandler = async (
+  input: DashboardInput,
+  deps: DashboardHandlerDeps = {},
+): Promise<DashboardData> => {
+  const now = deps.now ?? (() => new Date());
+  const nowMs = now().getTime();
+
+  // Materialise the dev seed on the first call per owner — same hook the
+  // `/groups` handler uses. Calling it from both places is safe because the
+  // seed is gated by `seededOwnerIds.has(ownerId)`.
+  seedDevDataIfEmpty(input.ownerId);
+
+  const store = getGroupServerStore();
+
+  const groups = [...store.groups.values()].filter((g) => g.ownerId === input.ownerId);
+  const groupIds = new Set(groups.map((g) => g.id));
+  const groupNameById = new Map(groups.map((g) => [g.id, g.name] as const));
+
+  const games = [...store.games.values()].filter((g) => groupIds.has(g.groupId));
+  const leagues = [...store.leagues.values()].filter((l) => groupIds.has(l.groupId));
+  const leagueNameById = new Map(leagues.map((l) => [l.id, l.name] as const));
+  const matches = [...store.matches.values()].filter((m) => groupIds.has(m.groupId));
+
+  // Player counts per group for the group cards. Filtering `isActive` here is
+  // intentional — the S3 spec says "Group のメンバー数" which we read as the
+  // currently-active roster, not historical.
+  const playersByGroup = new Map<string, number>();
+  for (const player of store.players.values()) {
+    if (!groupIds.has(player.groupId)) continue;
+    if (!player.isActive) continue;
+    playersByGroup.set(player.groupId, (playersByGroup.get(player.groupId) ?? 0) + 1);
+  }
+
+  return {
+    groups: projectGroupCards(groups, games, playersByGroup),
+    activeLeagues: projectActiveLeagues(leagues, matches, games, groupNameById),
+    activeMatches: projectActiveMatches(matches, games, groupNameById, leagueNameById, nowMs),
+    recentGames: projectRecentGames(games, groupNameById, leagueNameById, matches),
+    pendingInvitationCount: countPendingInvitations(store.invitations, input.ownerId, nowMs),
+  };
+};
+
+export const getDashboardServerFn = createServerFn({ method: 'GET' })
+  .inputValidator(dashboardInput)
+  .handler(({ data }) => dashboardHandler(data));

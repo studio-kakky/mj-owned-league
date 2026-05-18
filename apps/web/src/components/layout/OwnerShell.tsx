@@ -39,13 +39,13 @@ export interface OwnerShellProps {
   children: ReactNode;
 }
 
-export function OwnerShell({
+export const OwnerShell = ({
   session,
   activeGroup,
   groups,
   onSelectGroup,
   children,
-}: OwnerShellProps) {
+}: OwnerShellProps) => {
   const [isSheetOpen, setSheetOpen] = useState(false);
 
   return (
@@ -70,4 +70,4 @@ export function OwnerShell({
       />
     </div>
   );
-}
+};

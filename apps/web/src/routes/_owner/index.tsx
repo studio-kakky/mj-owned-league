@@ -30,6 +30,11 @@ import { createFileRoute } from '@tanstack/react-router';
 import { DashboardScreen } from '../../components/dashboard';
 import { getDashboardServerFn } from '../../server/dashboard';
 
+const OwnerDashboardPage = () => {
+  const { data } = Route.useLoaderData();
+  return <DashboardScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_owner/')({
   loader: async ({ context }) => {
     const data = await getDashboardServerFn({
@@ -39,8 +44,3 @@ export const Route = createFileRoute('/_owner/')({
   },
   component: OwnerDashboardPage,
 });
-
-function OwnerDashboardPage() {
-  const { data } = Route.useLoaderData();
-  return <DashboardScreen data={data} />;
-}

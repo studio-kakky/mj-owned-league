@@ -49,6 +49,38 @@ import { consumeInvitationServerFn } from '../server/invitation-accept';
 import type { InvitationInvalidReason } from '../services';
 import { INVITATION_INVALID_REASONS, InvitationInvalidError } from '../services';
 
+/**
+ * Server functions serialise thrown errors as plain JSON, so by the time the
+ * exception reaches us the `instanceof InvitationInvalidError` check fails.
+ * We pattern-match on the documented shape (an object carrying a `reason`
+ * string that belongs to {@link INVITATION_INVALID_REASONS}) and surface
+ * `null` for anything we don't recognise so the caller rethrows it.
+ */
+const extractInvitationInvalidReason = (cause: unknown): InvitationInvalidReason | null => {
+  if (typeof cause !== 'object' || cause === null) return null;
+  const reason = (cause as { reason?: unknown }).reason;
+  if (typeof reason !== 'string') return null;
+  return INVITATION_INVALID_REASONS.includes(reason as InvitationInvalidReason)
+    ? (reason as InvitationInvalidReason)
+    : null;
+};
+
+/**
+ * Placeholder body. `beforeLoad` always throws a redirect on the happy and
+ * sad paths, so this only renders during the brief moment before the
+ * redirect resolves.
+ */
+const InviteAcceptCompletePage = () => {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
+      <div className="space-y-2 text-center">
+        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-100">JANROKU</p>
+        <p className="text-xs text-zinc-500">招待を確定中…</p>
+      </div>
+    </main>
+  );
+};
+
 export const Route = createFileRoute('/invitations/accept/$token/complete')({
   beforeLoad: async ({ params }) => {
     // 1. Confirm Better Auth has a session. Without one, the user never
@@ -113,39 +145,3 @@ export const Route = createFileRoute('/invitations/accept/$token/complete')({
   },
   component: InviteAcceptCompletePage,
 });
-
-/**
- * Placeholder body. `beforeLoad` always throws a redirect on the happy and
- * sad paths, so this only renders during the brief moment before the
- * redirect resolves.
- */
-function InviteAcceptCompletePage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-6 text-zinc-100">
-      <div className="space-y-2 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-100">JANROKU</p>
-        <p className="text-xs text-zinc-500">招待を確定中…</p>
-      </div>
-    </main>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Error decoding
-// ---------------------------------------------------------------------------
-
-/**
- * Server functions serialise thrown errors as plain JSON, so by the time the
- * exception reaches us the `instanceof InvitationInvalidError` check fails.
- * We pattern-match on the documented shape (an object carrying a `reason`
- * string that belongs to {@link INVITATION_INVALID_REASONS}) and surface
- * `null` for anything we don't recognise so the caller rethrows it.
- */
-function extractInvitationInvalidReason(cause: unknown): InvitationInvalidReason | null {
-  if (typeof cause !== 'object' || cause === null) return null;
-  const reason = (cause as { reason?: unknown }).reason;
-  if (typeof reason !== 'string') return null;
-  return INVITATION_INVALID_REASONS.includes(reason as InvitationInvalidReason)
-    ? (reason as InvitationInvalidReason)
-    : null;
-}

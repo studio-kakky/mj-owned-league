@@ -29,7 +29,7 @@ export interface InvitationFormModalProps {
   onSubmit: (memo: string) => void | Promise<void>;
 }
 
-export function InvitationFormModal({ open, onClose, onSubmit }: InvitationFormModalProps) {
+export const InvitationFormModal = ({ open, onClose, onSubmit }: InvitationFormModalProps) => {
   const titleId = useId();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -131,4 +131,4 @@ export function InvitationFormModal({ open, onClose, onSubmit }: InvitationFormM
       </form>
     </Modal>
   );
-}
+};

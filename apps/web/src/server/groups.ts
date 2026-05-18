@@ -73,7 +73,7 @@ interface ServerRepos {
   games: GameRepository;
 }
 
-function makeRepos(): ServerRepos {
+const makeRepos = (): ServerRepos => {
   const store = getGroupServerStore();
   const groups = new MemoryGroupRepository(store);
   const rulesets = new MemoryRulesetRepository(store);
@@ -85,7 +85,7 @@ function makeRepos(): ServerRepos {
     generateId: () => globalThis.crypto.randomUUID(),
   });
   return { service, groups, rulesets, games };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -115,15 +115,42 @@ export type CreateGroupInput = z.infer<typeof createGroupInput>;
 export type RenameGroupInput = z.infer<typeof renameGroupInput>;
 export type DeleteGroupInput = z.infer<typeof deleteGroupInput>;
 
+// ---------------------------------------------------------------------------
+// Projection helper
+// ---------------------------------------------------------------------------
+
+const projectToListItem = (group: Group, games: ReadonlyArray<Game>): GroupListItem => {
+  // `lastPlayedAt` is the most recent Game's `playedAt`; null when no Games.
+  let lastPlayedAt: string | null = null;
+  for (const game of games) {
+    if (lastPlayedAt === null || game.playedAt > lastPlayedAt) {
+      lastPlayedAt = game.playedAt;
+    }
+  }
+
+  return {
+    id: group.id,
+    name: group.name,
+    // Player / League counts are not part of the in-memory store yet (those
+    // entities arrive in later screens). We surface `0` for now; when the
+    // service layer learns to aggregate these, this is the only call site
+    // that needs to start passing real values.
+    playerCount: 0,
+    leagueCount: 0,
+    lastPlayedAt,
+    hasHistory: games.length > 0,
+  };
+};
+
 /**
  * Returns the `GroupListItem[]` projection used by the S4 list. Filters by
  * `ownerId` so cross-owner reads never happen even if the client tampers
  * with the request (the eventual server-side session check will narrow this
  * further; for now the filter at the service layer is the only enforcement).
  */
-export async function listGroupsHandler(
+export const listGroupsHandler = async (
   input: ListGroupsInput,
-): Promise<ReadonlyArray<GroupListItem>> {
+): Promise<ReadonlyArray<GroupListItem>> => {
   // Materialise the dev fixtures on the first call per owner. No-op
   // afterwards. Lives behind the in-memory storage swap so it disappears
   // when D1 is wired.
@@ -138,14 +165,14 @@ export async function listGroupsHandler(
       return projectToListItem(group, gamesForGroup);
     }),
   );
-}
+};
 
 /**
  * Runs `GroupService.createWithDefaultRuleset`. Returns the freshly-created
  * `GroupListItem` so the route can show it without waiting for the next list
  * re-fetch (though the route also `invalidate`s).
  */
-export async function createGroupHandler(input: CreateGroupInput): Promise<GroupListItem> {
+export const createGroupHandler = async (input: CreateGroupInput): Promise<GroupListItem> => {
   const { service } = makeRepos();
   const { group } = await service.createWithDefaultRuleset({
     ownerId: input.ownerId,
@@ -153,14 +180,16 @@ export async function createGroupHandler(input: CreateGroupInput): Promise<Group
   });
   // Brand-new Group has no Games yet; we don't bother re-fetching.
   return projectToListItem(group, []);
-}
+};
 
 /**
  * Updates `groups.name` only. Returns `null` when the Group does not exist
  * (mismatched ids from a stale UI state); the caller treats `null` as
  * "refresh the list".
  */
-export async function renameGroupHandler(input: RenameGroupInput): Promise<GroupListItem | null> {
+export const renameGroupHandler = async (
+  input: RenameGroupInput,
+): Promise<GroupListItem | null> => {
   const { service, games } = makeRepos();
   // Guard against cross-owner mutation. If the row exists but belongs to
   // someone else, we return `null` rather than 403; the loader's
@@ -172,7 +201,7 @@ export async function renameGroupHandler(input: RenameGroupInput): Promise<Group
   if (updated === null) return null;
   const gamesForGroup = await games.listByGroup(updated.id);
   return projectToListItem(updated, gamesForGroup);
-}
+};
 
 /**
  * History-aware delete. Throws `GroupHasHistoryError` when Games exist (the
@@ -180,7 +209,9 @@ export async function renameGroupHandler(input: RenameGroupInput): Promise<Group
  * the TOCTOU window). Returns `{ deleted: true }` on success and `{ deleted:
  * false }` for "row not found / not yours" so the client can resync.
  */
-export async function deleteGroupHandler(input: DeleteGroupInput): Promise<{ deleted: boolean }> {
+export const deleteGroupHandler = async (
+  input: DeleteGroupInput,
+): Promise<{ deleted: boolean }> => {
   const { service } = makeRepos();
   const existing = await service.findById(input.groupId);
   if (existing === null || existing.ownerId !== input.ownerId) {
@@ -201,7 +232,7 @@ export async function deleteGroupHandler(input: DeleteGroupInput): Promise<{ del
     }
     throw cause;
   }
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server functions
@@ -225,33 +256,6 @@ export const renameGroupServerFn = createServerFn({ method: 'POST' })
 export const deleteGroupServerFn = createServerFn({ method: 'POST' })
   .inputValidator(deleteGroupInput)
   .handler(({ data }) => deleteGroupHandler(data));
-
-// ---------------------------------------------------------------------------
-// Projection helper
-// ---------------------------------------------------------------------------
-
-function projectToListItem(group: Group, games: ReadonlyArray<Game>): GroupListItem {
-  // `lastPlayedAt` is the most recent Game's `playedAt`; null when no Games.
-  let lastPlayedAt: string | null = null;
-  for (const game of games) {
-    if (lastPlayedAt === null || game.playedAt > lastPlayedAt) {
-      lastPlayedAt = game.playedAt;
-    }
-  }
-
-  return {
-    id: group.id,
-    name: group.name,
-    // Player / League counts are not part of the in-memory store yet (those
-    // entities arrive in later screens). We surface `0` for now; when the
-    // service layer learns to aggregate these, this is the only call site
-    // that needs to start passing real values.
-    playerCount: 0,
-    leagueCount: 0,
-    lastPlayedAt,
-    hasHistory: games.length > 0,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // In-memory repository implementations

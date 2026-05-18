@@ -48,26 +48,29 @@ export interface UpsertOwnerInput {
  * trip — SELECT-then-INSERT would race and double the cost in the common
  * "already exists" path on session refresh.
  */
-export async function upsertOwnerForUser(db: Database, user: UpsertOwnerInput): Promise<void> {
+export const upsertOwnerForUser = async (
+  db: Database,
+  user: UpsertOwnerInput,
+): Promise<void> => {
   await db
     .insert(owners)
     .values({ id: user.id, email: user.email })
     .onConflictDoNothing({ target: owners.id });
-}
+};
 
 /**
  * Convenience read used by tests / by future server functions that want to
  * confirm an owner row exists for the current session. Returns `null` when
  * no row matches — callers can decide whether that should be a 401 / 500 / etc.
  */
-export async function findOwnerById(
+export const findOwnerById = async (
   db: Database,
   id: string,
-): Promise<{ id: string; email: string } | null> {
+): Promise<{ id: string; email: string } | null> => {
   const rows = await db
     .select({ id: owners.id, email: owners.email })
     .from(owners)
     .where(eq(owners.id, id))
     .limit(1);
   return rows[0] ?? null;
-}
+};

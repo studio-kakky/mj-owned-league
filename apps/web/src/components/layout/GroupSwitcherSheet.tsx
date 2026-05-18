@@ -38,13 +38,13 @@ export interface GroupSwitcherSheetProps {
   onSelect: (groupId: string) => void;
 }
 
-export function GroupSwitcherSheet({
+export const GroupSwitcherSheet = ({
   open,
   onClose,
   groups,
   activeGroupId,
   onSelect,
-}: GroupSwitcherSheetProps) {
+}: GroupSwitcherSheetProps) => {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -137,4 +137,4 @@ export function GroupSwitcherSheet({
       </div>
     </div>
   );
-}
+};

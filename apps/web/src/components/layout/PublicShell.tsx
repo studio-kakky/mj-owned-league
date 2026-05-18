@@ -19,7 +19,7 @@ export interface PublicShellProps {
   children: ReactNode;
 }
 
-export function PublicShell({ children }: PublicShellProps) {
+export const PublicShell = ({ children }: PublicShellProps) => {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-900 bg-zinc-950/95">
@@ -45,4 +45,4 @@ export function PublicShell({ children }: PublicShellProps) {
       </footer>
     </div>
   );
-}
+};

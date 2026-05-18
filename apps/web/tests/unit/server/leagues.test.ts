@@ -29,6 +29,18 @@ beforeEach(() => {
   resetGroupServerStoreForTests();
 });
 
+const makeStubLeague = (slug: string) => {
+  return {
+    id: 'stub',
+    groupId: 'g',
+    name: 'stub',
+    format: '4P_HANCHAN' as const,
+    defaultRulesetId: null,
+    publicSlug: slug,
+    createdAt: new Date().toISOString(),
+  };
+};
+
 describe('listLeaguesHandler', () => {
   it('materialises the dev seed on first call and returns the seeded League with the Group label', async () => {
     const data = await listLeaguesHandler({ ownerId: owner });
@@ -169,7 +181,7 @@ describe('generatePublicSlug', () => {
   // Minimal fake LeagueRepository: only `findByPublicSlug` is exercised. We
   // declare it as a `Pick<...>` so the type system covers the surface we
   // touch without forcing us to stub a dozen methods we never call.
-  function makeRepo(taken: ReadonlySet<string>): LeagueRepository {
+  const makeRepo = (taken: ReadonlySet<string>): LeagueRepository => {
     return {
       findById: async () => null,
       findByPublicSlug: async (slug: string) => (taken.has(slug) ? makeStubLeague(slug) : null),
@@ -178,7 +190,7 @@ describe('generatePublicSlug', () => {
       update: async () => null,
       delete: async () => false,
     };
-  }
+  };
 
   it('returns the first slug when it is unused', async () => {
     const repo = makeRepo(new Set());
@@ -200,15 +212,3 @@ describe('generatePublicSlug', () => {
     );
   });
 });
-
-function makeStubLeague(slug: string) {
-  return {
-    id: 'stub',
-    groupId: 'g',
-    name: 'stub',
-    format: '4P_HANCHAN' as const,
-    defaultRulesetId: null,
-    publicSlug: slug,
-    createdAt: new Date().toISOString(),
-  };
-}

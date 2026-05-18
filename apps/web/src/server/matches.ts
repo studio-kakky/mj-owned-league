@@ -66,7 +66,7 @@ interface ServerRepos {
   rulesets: RulesetRepository;
 }
 
-function makeRepos(): ServerRepos {
+const makeRepos = (): ServerRepos => {
   const store = getGroupServerStore();
   const matches = new MemoryMatchRepository(store);
   const games = new MemoryGameRepository(store);
@@ -77,7 +77,7 @@ function makeRepos(): ServerRepos {
     rulesets,
     service: new MatchService(matches, games),
   };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Input validators
@@ -121,6 +121,22 @@ const createMatchInput = z.object({
 export type GetMatchCreateContextInput = z.infer<typeof getContextInput>;
 export type CreateMatchInput = z.infer<typeof createMatchInput>;
 
+/**
+ * Returns the next `sequenceNumber` for a League. Exported for testing —
+ * production callers go through {@link getMatchCreateContextHandler} or
+ * {@link createMatchHandler}.
+ */
+export const computeNextSequenceNumber = (store: GroupServerStore, leagueId: string): number => {
+  let max = 0;
+  for (const m of store.matches.values()) {
+    if (m.leagueId !== leagueId) continue;
+    if (m.sequenceNumber !== null && m.sequenceNumber > max) {
+      max = m.sequenceNumber;
+    }
+  }
+  return max + 1;
+};
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -140,9 +156,9 @@ export type CreateMatchInput = z.infer<typeof createMatchInput>;
  *   - `?groupId=` is similarly dropped when foreign; we fall back to the
  *     Owner's first Group as the initial selection.
  */
-export async function getMatchCreateContextHandler(
+export const getMatchCreateContextHandler = async (
   input: GetMatchCreateContextInput,
-): Promise<MatchCreateContext> {
+): Promise<MatchCreateContext> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store } = makeRepos();
 
@@ -231,7 +247,7 @@ export async function getMatchCreateContextHandler(
     initialGroupId,
     initialSequenceNumber,
   };
-}
+};
 
 /**
  * Persists a new Match under a Group owned by the caller.
@@ -249,7 +265,7 @@ export async function getMatchCreateContextHandler(
  * same number — within the limits of an in-memory store; under D1 the same
  * read-then-insert pair will run inside a transaction (tracked with #39).
  */
-export async function createMatchHandler(input: CreateMatchInput): Promise<CreatedMatchSummary> {
+export const createMatchHandler = async (input: CreateMatchInput): Promise<CreatedMatchSummary> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store, service } = makeRepos();
 
@@ -295,23 +311,7 @@ export async function createMatchHandler(input: CreateMatchInput): Promise<Creat
     name: created.name,
     sequenceNumber: created.sequenceNumber,
   };
-}
-
-/**
- * Returns the next `sequenceNumber` for a League. Exported for testing —
- * production callers go through {@link getMatchCreateContextHandler} or
- * {@link createMatchHandler}.
- */
-export function computeNextSequenceNumber(store: GroupServerStore, leagueId: string): number {
-  let max = 0;
-  for (const m of store.matches.values()) {
-    if (m.leagueId !== leagueId) continue;
-    if (m.sequenceNumber !== null && m.sequenceNumber > max) {
-      max = m.sequenceNumber;
-    }
-  }
-  return max + 1;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server function wrappers

@@ -37,17 +37,7 @@ import {
   revokeInvitationServerFn,
 } from '../../server/invitations';
 
-export const Route = createFileRoute('/_owner/invitations')({
-  loader: async ({ context }) => {
-    const invitations = await listInvitationsServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
-    });
-    return { invitations };
-  },
-  component: InvitationsPage,
-});
-
-function InvitationsPage() {
+const InvitationsPage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { invitations } = Route.useLoaderData();
@@ -88,4 +78,14 @@ function InvitationsPage() {
       onRevoke={handleRevoke}
     />
   );
-}
+};
+
+export const Route = createFileRoute('/_owner/invitations')({
+  loader: async ({ context }) => {
+    const invitations = await listInvitationsServerFn({
+      data: { ownerId: context.ownerSession.ownerId },
+    });
+    return { invitations };
+  },
+  component: InvitationsPage,
+});

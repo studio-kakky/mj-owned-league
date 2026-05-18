@@ -25,12 +25,12 @@ export interface InvitationRevokeConfirmModalProps {
   onConfirm: () => void | Promise<void>;
 }
 
-export function InvitationRevokeConfirmModal({
+export const InvitationRevokeConfirmModal = ({
   open,
   memo,
   onClose,
   onConfirm,
-}: InvitationRevokeConfirmModalProps) {
+}: InvitationRevokeConfirmModalProps) => {
   const titleId = useId();
   const [isRevoking, setRevoking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,4 +96,4 @@ export function InvitationRevokeConfirmModal({
       </div>
     </Modal>
   );
-}
+};

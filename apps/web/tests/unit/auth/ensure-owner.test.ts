@@ -25,7 +25,7 @@ interface FakeDbCall {
  * by `onConflictDoNothing` in real Drizzle is a thenable query; the function
  * under test only `await`s it, so resolving a plain Promise is sufficient.
  */
-function makeFakeDb(calls: FakeDbCall[]) {
+const makeFakeDb = (calls: FakeDbCall[]) => {
   const insert = vi.fn((table: unknown) => ({
     values: (input: unknown) => ({
       onConflictDoNothing: (opts: unknown) => {
@@ -35,7 +35,7 @@ function makeFakeDb(calls: FakeDbCall[]) {
     }),
   }));
   return { insert } as unknown as Parameters<typeof upsertOwnerForUser>[0];
-}
+};
 
 const user: UpsertOwnerInput = {
   id: 'user-1',

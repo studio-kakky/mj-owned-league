@@ -47,19 +47,7 @@ const searchSchema = z.object({
   groupId: z.string().min(1).optional(),
 });
 
-export const Route = createFileRoute('/_owner/settings')({
-  validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
-    const data = await getSettingsServerFn({
-      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
-    });
-    return { data };
-  },
-  component: SettingsPage,
-});
-
-function SettingsPage() {
+const SettingsPage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
@@ -176,4 +164,16 @@ function SettingsPage() {
       onReactivatePlayer={handleReactivatePlayer}
     />
   );
-}
+};
+
+export const Route = createFileRoute('/_owner/settings')({
+  validateSearch: searchSchema,
+  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
+  loader: async ({ context, deps }) => {
+    const data = await getSettingsServerFn({
+      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
+    });
+    return { data };
+  },
+  component: SettingsPage,
+});

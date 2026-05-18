@@ -32,7 +32,7 @@ vi.mock('@tanstack/react-router', () => ({
 import type { MatchDetailData } from '../../../../src/components/matches/detail-types';
 import { MatchDetailScreen } from '../../../../src/components/matches/MatchDetailScreen';
 
-function makeDetail(overrides: Partial<MatchDetailData> = {}): MatchDetailData {
+const makeDetail = (overrides: Partial<MatchDetailData> = {}): MatchDetailData => {
   const rulesetOption = {
     id: 'r1',
     name: '標準ルール',
@@ -146,7 +146,7 @@ function makeDetail(overrides: Partial<MatchDetailData> = {}): MatchDetailData {
     ],
     ...overrides,
   };
-}
+};
 
 describe('MatchDetailScreen', () => {
   it('renders the header with sequenceNumber + name, ranking, and game list', () => {

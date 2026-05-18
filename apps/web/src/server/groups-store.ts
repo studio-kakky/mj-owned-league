@@ -105,7 +105,7 @@ interface GlobalWithStore {
   [GLOBAL_KEY]?: GroupServerStore;
 }
 
-function createEmptyStore(): GroupServerStore {
+const createEmptyStore = (): GroupServerStore => {
   return {
     groups: new Map(),
     rulesets: new Map(),
@@ -117,32 +117,32 @@ function createEmptyStore(): GroupServerStore {
     gameResults: new Map(),
     seededOwnerIds: new Set(),
   };
-}
+};
 
 /**
  * Composite key helper for `gameResults`. Exported so server modules use a
  * single canonical form when reading / writing this map.
  */
-export function gameResultKey(gameId: string, playerId: string): string {
+export const gameResultKey = (gameId: string, playerId: string): string => {
   return `${gameId}::${playerId}`;
-}
+};
 
-export function getGroupServerStore(): GroupServerStore {
+export const getGroupServerStore = (): GroupServerStore => {
   const g = globalThis as unknown as GlobalWithStore;
   if (!g[GLOBAL_KEY]) {
     g[GLOBAL_KEY] = createEmptyStore();
   }
   return g[GLOBAL_KEY];
-}
+};
 
 /**
  * Test-only escape hatch — resets the singleton so tests can run in
  * isolation. Production code never imports this.
  */
-export function resetGroupServerStoreForTests(): void {
+export const resetGroupServerStoreForTests = (): void => {
   const g = globalThis as unknown as GlobalWithStore;
   g[GLOBAL_KEY] = createEmptyStore();
-}
+};
 
 /**
  * Materialises the dev seed for `ownerId` if we haven't already. The seed
@@ -154,7 +154,7 @@ export function resetGroupServerStoreForTests(): void {
  * again. The early-return on `seededOwnerIds.has(ownerId)` makes this safe
  * to call from every `listGroups` invocation.
  */
-export function seedDevDataIfEmpty(ownerId: string): void {
+export const seedDevDataIfEmpty = (ownerId: string): void => {
   const store = getGroupServerStore();
   if (store.seededOwnerIds.has(ownerId)) return;
   store.seededOwnerIds.add(ownerId);
@@ -329,4 +329,4 @@ export function seedDevDataIfEmpty(ownerId: string): void {
     revokedAt: null,
     createdAt: now,
   });
-}
+};

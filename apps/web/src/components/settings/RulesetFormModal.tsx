@@ -48,13 +48,13 @@ const DEFAULT_VALUES: RulesetFormInput = {
   tobiPoint: null,
 };
 
-export function RulesetFormModal({
+export const RulesetFormModal = ({
   open,
   mode,
   initialValues,
   onClose,
   onSubmit,
-}: RulesetFormModalProps) {
+}: RulesetFormModalProps) => {
   const titleId = useId();
   const nameId = useId();
   const startingId = useId();
@@ -288,4 +288,4 @@ export function RulesetFormModal({
       </form>
     </Modal>
   );
-}
+};

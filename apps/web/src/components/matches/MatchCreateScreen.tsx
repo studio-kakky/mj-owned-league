@@ -86,11 +86,11 @@ const NO_RULESET_VALUE = '__no_ruleset__';
  * creation with friendly copy. 4P / 3P formats are the only two buckets,
  * so the literal mapping is fine.
  */
-function formatRequiresPlayers(format: LeagueFormat): number {
+const formatRequiresPlayers = (format: LeagueFormat): number => {
   return format.startsWith('3P') ? 3 : 4;
-}
+};
 
-export function MatchCreateScreen({ data, onSubmit, onCancel }: MatchCreateScreenProps) {
+export const MatchCreateScreen = ({ data, onSubmit, onCancel }: MatchCreateScreenProps) => {
   const nameId = useId();
   const groupId = useId();
   const leagueId = useId();
@@ -501,4 +501,4 @@ export function MatchCreateScreen({ data, onSubmit, onCancel }: MatchCreateScree
       </form>
     </section>
   );
-}
+};

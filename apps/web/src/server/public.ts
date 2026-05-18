@@ -92,6 +92,191 @@ export type PublicLeagueMatchInput = z.infer<typeof leagueMatchInput>;
 export type PublicLeaguePlayerInput = z.infer<typeof leaguePlayerInput>;
 
 // ---------------------------------------------------------------------------
+// Projection helpers
+// ---------------------------------------------------------------------------
+
+const projectGameRow = (
+  game: Game,
+  gameResults: ReadonlyMap<string, GameResult>,
+  playerNameById: ReadonlyMap<string, string>,
+  rulesetNameById: ReadonlyMap<string, string>,
+): PublicMatchGameRow => {
+  const results: PublicMatchGameResultRow[] = [];
+  for (const r of gameResults.values()) {
+    if (r.gameId !== game.id) continue;
+    results.push({
+      playerId: r.playerId,
+      playerName: playerNameById.get(r.playerId) ?? '（削除されたプレイヤー）',
+      rawScore: r.rawScore,
+      points: r.points,
+      rank: r.rank,
+      tobiRole: r.tobiRole,
+    });
+  }
+  results.sort((a, b) => a.rank - b.rank);
+  return {
+    id: game.id,
+    playedAt: game.playedAt,
+    rulesetName: rulesetNameById.get(game.rulesetId) ?? '（削除された Ruleset）',
+    results,
+  };
+};
+
+const projectRulesetSummary = (ruleset: Ruleset): PublicRulesetSummary => {
+  return {
+    name: ruleset.name,
+    startingScore: ruleset.startingScore,
+    returnScore: ruleset.returnScore,
+    umaPattern: ruleset.umaPattern,
+    tobiPoint: ruleset.tobiEnabled ? ruleset.tobiPoint : null,
+  };
+};
+
+const findLeagueBySlug = (store: GroupServerStore, slug: string): League | null => {
+  for (const league of store.leagues.values()) {
+    if (league.publicSlug === slug) return league;
+  }
+  return null;
+};
+
+const computeLeagueRanking = (
+  games: ReadonlyArray<Game>,
+  gameResults: ReadonlyMap<string, GameResult>,
+  playerNameById: ReadonlyMap<string, string>,
+  format: LeagueFormat,
+): PublicLeagueRankingRow[] => {
+  const lastRank = format.startsWith('3P') ? 3 : 4;
+  const leagueGameIds = new Set(games.map((g) => g.id));
+
+  const acc = new Map<
+    string,
+    {
+      gameCount: number;
+      totalPoints: number;
+      topCount: number;
+      lastCount: number;
+      rankSum: number;
+    }
+  >();
+  for (const r of gameResults.values()) {
+    if (!leagueGameIds.has(r.gameId)) continue;
+    const entry = acc.get(r.playerId) ?? {
+      gameCount: 0,
+      totalPoints: 0,
+      topCount: 0,
+      lastCount: 0,
+      rankSum: 0,
+    };
+    entry.gameCount += 1;
+    entry.totalPoints += r.points;
+    entry.rankSum += r.rank;
+    if (r.rank === 1) entry.topCount += 1;
+    if (r.rank === lastRank) entry.lastCount += 1;
+    acc.set(r.playerId, entry);
+  }
+
+  const rows: PublicLeagueRankingRow[] = [...acc.entries()].map(([playerId, entry]) => ({
+    playerId,
+    playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
+    gameCount: entry.gameCount,
+    totalPoints: entry.totalPoints,
+    averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
+    topCount: entry.topCount,
+    lastCount: entry.lastCount,
+    averageRank: entry.gameCount === 0 ? 0 : entry.rankSum / entry.gameCount,
+    topRate: entry.gameCount === 0 ? 0 : entry.topCount / entry.gameCount,
+  }));
+
+  rows.sort((a, b) => {
+    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
+    return a.playerName.localeCompare(b.playerName);
+  });
+
+  return rows;
+};
+
+const projectMatchPayload = (
+  store: GroupServerStore,
+  match: Match,
+  group: Group,
+  league: League | null,
+): PublicMatchData => {
+  const format: LeagueFormat = league?.format ?? '4P_HANCHAN';
+
+  const groupPlayers = [...store.players.values()].filter((p) => p.groupId === group.id);
+  const playerNameById = new Map(groupPlayers.map((p) => [p.id, p.name] as const));
+  const groupRulesets = [...store.rulesets.values()].filter((r) => r.groupId === group.id);
+  const rulesetNameById = new Map(groupRulesets.map((r) => [r.id, r.name] as const));
+
+  const games = [...store.games.values()].filter((g) => g.matchId === match.id);
+  games.sort((a, b) => (a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0));
+
+  const gameRows: PublicMatchGameRow[] = games.map((g) =>
+    projectGameRow(g, store.gameResults, playerNameById, rulesetNameById),
+  );
+
+  // Match-internal ranking — totalPoints desc, with the same tie-break order
+  // the Owner-side calculator uses for stability.
+  const lastRank = format.startsWith('3P') ? 3 : 4;
+  const acc = new Map<
+    string,
+    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
+  >();
+  for (const game of gameRows) {
+    for (const r of game.results) {
+      const entry = acc.get(r.playerId) ?? {
+        gameCount: 0,
+        totalPoints: 0,
+        topCount: 0,
+        lastCount: 0,
+      };
+      entry.gameCount += 1;
+      entry.totalPoints += r.points;
+      if (r.rank === 1) entry.topCount += 1;
+      if (r.rank === lastRank) entry.lastCount += 1;
+      acc.set(r.playerId, entry);
+    }
+  }
+  const ranking: PublicMatchRankingRow[] = [...acc.entries()]
+    .map(
+      ([playerId, entry]): PublicMatchRankingRow => ({
+        playerId,
+        playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
+        gameCount: entry.gameCount,
+        totalPoints: entry.totalPoints,
+        averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
+        topCount: entry.topCount,
+        lastCount: entry.lastCount,
+      }),
+    )
+    .sort((a, b) => {
+      if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+      if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
+      return a.playerName.localeCompare(b.playerName);
+    });
+
+  const effectiveRulesetId =
+    match.defaultRulesetId ?? league?.defaultRulesetId ?? group.defaultRulesetId ?? null;
+  const rulesetRow =
+    effectiveRulesetId === null ? null : (store.rulesets.get(effectiveRulesetId) ?? null);
+
+  return {
+    name: match.name,
+    heldAt: match.heldAt,
+    memo: match.memo,
+    format,
+    groupName: group.name,
+    leagueName: league?.name ?? null,
+    leaguePublicSlug: league?.publicSlug ?? null,
+    sequenceNumber: match.sequenceNumber,
+    defaultRuleset: rulesetRow === null ? null : projectRulesetSummary(rulesetRow),
+    ranking,
+    games: gameRows,
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -101,9 +286,9 @@ export type PublicLeaguePlayerInput = z.infer<typeof leaguePlayerInput>;
  * Returns the projected payload for the League whose `publicSlug` matches,
  * or `null` for unknown slugs (the route renders a 404-ish empty state).
  */
-export async function getPublicLeagueHandler(
+export const getPublicLeagueHandler = async (
   input: PublicSlugInput,
-): Promise<PublicLeagueData | null> {
+): Promise<PublicLeagueData | null> => {
   const store = getGroupServerStore();
 
   const league = findLeagueBySlug(store, input.publicSlug);
@@ -158,7 +343,7 @@ export async function getPublicLeagueHandler(
     matches: matchRows,
     ranking,
   };
-}
+};
 
 /**
  * P2 — Match 公開ページ (League 配下).
@@ -168,9 +353,9 @@ export async function getPublicLeagueHandler(
  * the League's Group; a mismatch is a data corruption sign, treated as
  * not-found from the viewer's perspective.
  */
-export async function getPublicLeagueMatchHandler(
+export const getPublicLeagueMatchHandler = async (
   input: PublicLeagueMatchInput,
-): Promise<PublicMatchData | null> {
+): Promise<PublicMatchData | null> => {
   const store = getGroupServerStore();
 
   const league = findLeagueBySlug(store, input.publicSlug);
@@ -185,7 +370,7 @@ export async function getPublicLeagueMatchHandler(
   if (match.groupId !== group.id) return null;
 
   return projectMatchPayload(store, match, group, league);
-}
+};
 
 /**
  * P3 — Match 公開ページ (League 外).
@@ -195,11 +380,11 @@ export async function getPublicLeagueMatchHandler(
  * the empty / "URL が無効" state. Adding the slug + lookup is a separate
  * Issue — see the file-level comment.
  */
-export async function getPublicMatchHandler(
+export const getPublicMatchHandler = async (
   _input: PublicSlugInput,
-): Promise<PublicMatchData | null> {
+): Promise<PublicMatchData | null> => {
   return null;
-}
+};
 
 /**
  * P4 — 個人成績ページ (League 内).
@@ -208,9 +393,9 @@ export async function getPublicMatchHandler(
  * to the League's Group; cross-Group player ids return `null` so a viewer
  * cannot enumerate players from a neighbouring Group via P4.
  */
-export async function getPublicPlayerHandler(
+export const getPublicPlayerHandler = async (
   input: PublicLeaguePlayerInput,
-): Promise<PublicPlayerData | null> {
+): Promise<PublicPlayerData | null> => {
   const store = getGroupServerStore();
 
   const league = findLeagueBySlug(store, input.publicSlug);
@@ -326,192 +511,7 @@ export async function getPublicPlayerHandler(
     matches: matchRows,
     games: gameRows,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Projection helpers
-// ---------------------------------------------------------------------------
-
-function projectMatchPayload(
-  store: GroupServerStore,
-  match: Match,
-  group: Group,
-  league: League | null,
-): PublicMatchData {
-  const format: LeagueFormat = league?.format ?? '4P_HANCHAN';
-
-  const groupPlayers = [...store.players.values()].filter((p) => p.groupId === group.id);
-  const playerNameById = new Map(groupPlayers.map((p) => [p.id, p.name] as const));
-  const groupRulesets = [...store.rulesets.values()].filter((r) => r.groupId === group.id);
-  const rulesetNameById = new Map(groupRulesets.map((r) => [r.id, r.name] as const));
-
-  const games = [...store.games.values()].filter((g) => g.matchId === match.id);
-  games.sort((a, b) => (a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0));
-
-  const gameRows: PublicMatchGameRow[] = games.map((g) =>
-    projectGameRow(g, store.gameResults, playerNameById, rulesetNameById),
-  );
-
-  // Match-internal ranking — totalPoints desc, with the same tie-break order
-  // the Owner-side calculator uses for stability.
-  const lastRank = format.startsWith('3P') ? 3 : 4;
-  const acc = new Map<
-    string,
-    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
-  >();
-  for (const game of gameRows) {
-    for (const r of game.results) {
-      const entry = acc.get(r.playerId) ?? {
-        gameCount: 0,
-        totalPoints: 0,
-        topCount: 0,
-        lastCount: 0,
-      };
-      entry.gameCount += 1;
-      entry.totalPoints += r.points;
-      if (r.rank === 1) entry.topCount += 1;
-      if (r.rank === lastRank) entry.lastCount += 1;
-      acc.set(r.playerId, entry);
-    }
-  }
-  const ranking: PublicMatchRankingRow[] = [...acc.entries()]
-    .map(
-      ([playerId, entry]): PublicMatchRankingRow => ({
-        playerId,
-        playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
-        gameCount: entry.gameCount,
-        totalPoints: entry.totalPoints,
-        averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
-        topCount: entry.topCount,
-        lastCount: entry.lastCount,
-      }),
-    )
-    .sort((a, b) => {
-      if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-      if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
-      return a.playerName.localeCompare(b.playerName);
-    });
-
-  const effectiveRulesetId =
-    match.defaultRulesetId ?? league?.defaultRulesetId ?? group.defaultRulesetId ?? null;
-  const rulesetRow =
-    effectiveRulesetId === null ? null : (store.rulesets.get(effectiveRulesetId) ?? null);
-
-  return {
-    name: match.name,
-    heldAt: match.heldAt,
-    memo: match.memo,
-    format,
-    groupName: group.name,
-    leagueName: league?.name ?? null,
-    leaguePublicSlug: league?.publicSlug ?? null,
-    sequenceNumber: match.sequenceNumber,
-    defaultRuleset: rulesetRow === null ? null : projectRulesetSummary(rulesetRow),
-    ranking,
-    games: gameRows,
-  };
-}
-
-function projectGameRow(
-  game: Game,
-  gameResults: ReadonlyMap<string, GameResult>,
-  playerNameById: ReadonlyMap<string, string>,
-  rulesetNameById: ReadonlyMap<string, string>,
-): PublicMatchGameRow {
-  const results: PublicMatchGameResultRow[] = [];
-  for (const r of gameResults.values()) {
-    if (r.gameId !== game.id) continue;
-    results.push({
-      playerId: r.playerId,
-      playerName: playerNameById.get(r.playerId) ?? '（削除されたプレイヤー）',
-      rawScore: r.rawScore,
-      points: r.points,
-      rank: r.rank,
-      tobiRole: r.tobiRole,
-    });
-  }
-  results.sort((a, b) => a.rank - b.rank);
-  return {
-    id: game.id,
-    playedAt: game.playedAt,
-    rulesetName: rulesetNameById.get(game.rulesetId) ?? '（削除された Ruleset）',
-    results,
-  };
-}
-
-function projectRulesetSummary(ruleset: Ruleset): PublicRulesetSummary {
-  return {
-    name: ruleset.name,
-    startingScore: ruleset.startingScore,
-    returnScore: ruleset.returnScore,
-    umaPattern: ruleset.umaPattern,
-    tobiPoint: ruleset.tobiEnabled ? ruleset.tobiPoint : null,
-  };
-}
-
-function findLeagueBySlug(store: GroupServerStore, slug: string): League | null {
-  for (const league of store.leagues.values()) {
-    if (league.publicSlug === slug) return league;
-  }
-  return null;
-}
-
-function computeLeagueRanking(
-  games: ReadonlyArray<Game>,
-  gameResults: ReadonlyMap<string, GameResult>,
-  playerNameById: ReadonlyMap<string, string>,
-  format: LeagueFormat,
-): PublicLeagueRankingRow[] {
-  const lastRank = format.startsWith('3P') ? 3 : 4;
-  const leagueGameIds = new Set(games.map((g) => g.id));
-
-  const acc = new Map<
-    string,
-    {
-      gameCount: number;
-      totalPoints: number;
-      topCount: number;
-      lastCount: number;
-      rankSum: number;
-    }
-  >();
-  for (const r of gameResults.values()) {
-    if (!leagueGameIds.has(r.gameId)) continue;
-    const entry = acc.get(r.playerId) ?? {
-      gameCount: 0,
-      totalPoints: 0,
-      topCount: 0,
-      lastCount: 0,
-      rankSum: 0,
-    };
-    entry.gameCount += 1;
-    entry.totalPoints += r.points;
-    entry.rankSum += r.rank;
-    if (r.rank === 1) entry.topCount += 1;
-    if (r.rank === lastRank) entry.lastCount += 1;
-    acc.set(r.playerId, entry);
-  }
-
-  const rows: PublicLeagueRankingRow[] = [...acc.entries()].map(([playerId, entry]) => ({
-    playerId,
-    playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
-    gameCount: entry.gameCount,
-    totalPoints: entry.totalPoints,
-    averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
-    topCount: entry.topCount,
-    lastCount: entry.lastCount,
-    averageRank: entry.gameCount === 0 ? 0 : entry.rankSum / entry.gameCount,
-    topRate: entry.gameCount === 0 ? 0 : entry.topCount / entry.gameCount,
-  }));
-
-  rows.sort((a, b) => {
-    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
-    return a.playerName.localeCompare(b.playerName);
-  });
-
-  return rows;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server function wrappers

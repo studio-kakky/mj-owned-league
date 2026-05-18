@@ -29,7 +29,11 @@ export interface InvitationCreatedModalProps {
 
 type CopyState = 'idle' | 'copied' | 'failed';
 
-export function InvitationCreatedModal({ open, inviteUrl, onClose }: InvitationCreatedModalProps) {
+export const InvitationCreatedModal = ({
+  open,
+  inviteUrl,
+  onClose,
+}: InvitationCreatedModalProps) => {
   const titleId = useId();
   const urlId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -126,4 +130,4 @@ export function InvitationCreatedModal({ open, inviteUrl, onClose }: InvitationC
       </div>
     </Modal>
   );
-}
+};

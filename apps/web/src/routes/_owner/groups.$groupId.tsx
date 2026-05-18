@@ -22,6 +22,11 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { GroupHomeScreen } from '../../components/group-home';
 import { getGroupHomeServerFn } from '../../server/group-home';
 
+const GroupHomePage = () => {
+  const { data } = Route.useLoaderData();
+  return <GroupHomeScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_owner/groups/$groupId')({
   loader: async ({ context, params }) => {
     const data = await getGroupHomeServerFn({
@@ -36,8 +41,3 @@ export const Route = createFileRoute('/_owner/groups/$groupId')({
   },
   component: GroupHomePage,
 });
-
-function GroupHomePage() {
-  const { data } = Route.useLoaderData();
-  return <GroupHomeScreen data={data} />;
-}

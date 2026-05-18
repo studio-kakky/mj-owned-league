@@ -38,14 +38,14 @@ beforeEach(() => {
  * intentionally does not seed the dev fixtures (see its docstring), so
  * tests that exercise verify in isolation need to set up the row by hand.
  */
-function seedInvitation(input: {
+const seedInvitation = (input: {
   id: string;
   ownerId: string;
   token: string;
   status?: 'PENDING' | 'CONSUMED' | 'REVOKED';
   memo?: string | null;
   expiresAt?: string;
-}): void {
+}): void => {
   const store = getGroupServerStore();
   store.invitations.set(input.id, {
     id: input.id,
@@ -59,7 +59,7 @@ function seedInvitation(input: {
     revokedAt: null,
     createdAt: '2026-05-10T00:00:00.000Z',
   });
-}
+};
 
 // ---------------------------------------------------------------------------
 // verifyInvitationHandler

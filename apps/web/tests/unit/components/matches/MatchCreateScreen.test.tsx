@@ -31,7 +31,7 @@ vi.mock('@tanstack/react-router', () => ({
 import { MatchCreateScreen } from '../../../../src/components/matches/MatchCreateScreen';
 import type { MatchCreateContext } from '../../../../src/components/matches/types';
 
-function makeContext(overrides: Partial<MatchCreateContext> = {}): MatchCreateContext {
+const makeContext = (overrides: Partial<MatchCreateContext> = {}): MatchCreateContext => {
   return {
     groups: [
       { id: 'g1', name: '金曜定例会', defaultRulesetId: 'r1' },
@@ -72,7 +72,7 @@ function makeContext(overrides: Partial<MatchCreateContext> = {}): MatchCreateCo
     initialSequenceNumber: null,
     ...overrides,
   };
-}
+};
 
 describe('MatchCreateScreen', () => {
   it('renders the form when at least one Group is available', () => {

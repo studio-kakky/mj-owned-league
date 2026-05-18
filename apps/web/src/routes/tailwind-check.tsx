@@ -1,10 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-export const Route = createFileRoute('/tailwind-check')({
-  component: TailwindCheckPage,
-});
-
-function TailwindCheckPage() {
+const TailwindCheckPage = () => {
   return (
     <main className="min-h-screen px-6 py-12">
       <div className="max-w-2xl mx-auto space-y-8">
@@ -33,4 +29,8 @@ function TailwindCheckPage() {
       </div>
     </main>
   );
-}
+};
+
+export const Route = createFileRoute('/tailwind-check')({
+  component: TailwindCheckPage,
+});

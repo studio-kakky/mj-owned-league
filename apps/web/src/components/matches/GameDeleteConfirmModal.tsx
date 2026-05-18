@@ -18,12 +18,12 @@ export interface GameDeleteConfirmModalProps {
   onConfirm: () => void | Promise<void>;
 }
 
-export function GameDeleteConfirmModal({
+export const GameDeleteConfirmModal = ({
   open,
   game,
   onClose,
   onConfirm,
-}: GameDeleteConfirmModalProps) {
+}: GameDeleteConfirmModalProps) => {
   const titleId = useId();
   const [isSubmitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,4 +103,4 @@ export function GameDeleteConfirmModal({
       </div>
     </Modal>
   );
-}
+};

@@ -24,13 +24,13 @@ export interface RulesetDeleteConfirmModalProps {
   onConfirm: () => void | Promise<void>;
 }
 
-export function RulesetDeleteConfirmModal({
+export const RulesetDeleteConfirmModal = ({
   open,
   rulesetName,
   isDefault,
   onClose,
   onConfirm,
-}: RulesetDeleteConfirmModalProps) {
+}: RulesetDeleteConfirmModalProps) => {
   const titleId = useId();
   const [isDeleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,4 +106,4 @@ export function RulesetDeleteConfirmModal({
       </div>
     </Modal>
   );
-}
+};
