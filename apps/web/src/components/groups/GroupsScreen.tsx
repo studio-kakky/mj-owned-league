@@ -54,12 +54,12 @@ type ModalState =
   | { kind: 'edit'; group: GroupListItem }
   | { kind: 'delete'; group: GroupListItem };
 
-export function GroupsScreen({
+export const GroupsScreen = ({
   groups,
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
-}: GroupsScreenProps) {
+}: GroupsScreenProps) => {
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const closeModal = () => setModal({ kind: 'none' });
 
@@ -169,7 +169,7 @@ export function GroupsScreen({
       />
     </section>
   );
-}
+};
 
 /**
  * Renders an ISO date / datetime string as the local-style `YYYY/MM/DD`
@@ -177,11 +177,11 @@ export function GroupsScreen({
  * original string so we don't silently swallow data issues during
  * development.
  */
-function formatDate(iso: string): string {
+const formatDate = (iso: string): string => {
   const parsed = new Date(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
   const yyyy = parsed.getFullYear();
   const mm = String(parsed.getMonth() + 1).padStart(2, '0');
   const dd = String(parsed.getDate()).padStart(2, '0');
   return `${yyyy}/${mm}/${dd}`;
-}
+};

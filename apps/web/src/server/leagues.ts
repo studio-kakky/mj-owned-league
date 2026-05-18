@@ -82,7 +82,7 @@ interface ServerRepos {
   games: GameRepository;
 }
 
-function makeRepos(): ServerRepos {
+const makeRepos = (): ServerRepos => {
   const store = getGroupServerStore();
   const leagues = new MemoryLeagueRepository(store);
   const rulesets = new MemoryRulesetRepository(store);
@@ -96,7 +96,7 @@ function makeRepos(): ServerRepos {
     games,
     service: new LeagueService(leagues),
   };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Input validators
@@ -142,14 +142,20 @@ export type CreateLeagueInput = z.infer<typeof createLeagueInput>;
  */
 export const PUBLIC_SLUG_MAX_RETRIES = 5;
 
+const defaultRandomSlug = (): string => {
+  // 16 hex chars = 64 bits of entropy; URL-safe; lowercase looks tidier in
+  // the address bar than the full UUID.
+  return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+};
+
 /**
  * Returns the next unused slug. Exported for testing — production callers
  * use it transitively through {@link createLeagueHandler}.
  */
-export async function generatePublicSlug(
+export const generatePublicSlug = async (
   leagues: LeagueRepository,
   random: () => string = defaultRandomSlug,
-): Promise<string> {
+): Promise<string> => {
   for (let attempt = 0; attempt < PUBLIC_SLUG_MAX_RETRIES; attempt++) {
     const candidate = random();
     const existing = await leagues.findByPublicSlug(candidate);
@@ -160,13 +166,89 @@ export async function generatePublicSlug(
   throw new Error(
     `Failed to generate a unique publicSlug after ${PUBLIC_SLUG_MAX_RETRIES} attempts.`,
   );
-}
+};
 
-function defaultRandomSlug(): string {
-  // 16 hex chars = 64 bits of entropy; URL-safe; lowercase looks tidier in
-  // the address bar than the full UUID.
-  return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-}
+// ---------------------------------------------------------------------------
+// Projections
+// ---------------------------------------------------------------------------
+
+const projectListItem = (
+  league: League,
+  store: GroupServerStore,
+  groupNameById: ReadonlyMap<string, string>,
+): LeagueListItem => {
+  let matchCount = 0;
+  for (const m of store.matches.values()) {
+    if (m.leagueId === league.id) matchCount++;
+  }
+
+  let gameCount = 0;
+  let lastPlayedAt: string | null = null;
+  for (const g of store.games.values()) {
+    if (g.leagueId !== league.id) continue;
+    gameCount++;
+    if (lastPlayedAt === null || g.playedAt > lastPlayedAt) {
+      lastPlayedAt = g.playedAt;
+    }
+  }
+
+  // `playerCount` counts distinct Players who have a Game in this League.
+  // GameResult is not modelled yet; for MVP we approximate "participants" as
+  // the active Players in the League's Group. This keeps the card honest
+  // (the count reflects reality at the active-roster level) without
+  // overstating activity.
+  let playerCount = 0;
+  for (const p of store.players.values()) {
+    if (p.groupId !== league.groupId) continue;
+    if (!p.isActive) continue;
+    playerCount++;
+  }
+
+  return {
+    id: league.id,
+    groupId: league.groupId,
+    groupName: groupNameById.get(league.groupId) ?? '',
+    name: league.name,
+    format: league.format,
+    status: 'ACTIVE',
+    matchCount,
+    gameCount,
+    playerCount,
+    lastPlayedAt,
+    publicSlug: league.publicSlug,
+  };
+};
+
+const projectRulesetOption = (
+  ruleset: Ruleset,
+  groupDefaultRulesetId: string | null,
+): LeagueRulesetOption => {
+  return {
+    id: ruleset.id,
+    name: ruleset.name,
+    startingScore: ruleset.startingScore,
+    returnScore: ruleset.returnScore,
+    umaPattern: ruleset.umaPattern,
+    isGroupDefault: groupDefaultRulesetId === ruleset.id,
+  };
+};
+
+const compareMatchRows = (a: LeagueMatchRow, b: LeagueMatchRow): number => {
+  // Dated matches first, descending by date. Undated matches trail and are
+  // sorted by sequenceNumber descending (newer first); null sequenceNumber
+  // trails further.
+  if (a.heldAt !== null && b.heldAt !== null) {
+    return a.heldAt > b.heldAt ? -1 : a.heldAt < b.heldAt ? 1 : 0;
+  }
+  if (a.heldAt !== null) return -1;
+  if (b.heldAt !== null) return 1;
+  if (a.sequenceNumber !== null && b.sequenceNumber !== null) {
+    return b.sequenceNumber - a.sequenceNumber;
+  }
+  if (a.sequenceNumber !== null) return -1;
+  if (b.sequenceNumber !== null) return 1;
+  return 0;
+};
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -181,7 +263,7 @@ function defaultRandomSlug(): string {
  * Bundling the modal options into the same response keeps the page on a
  * single round trip — see the comment on {@link LeagueListData}.
  */
-export async function listLeaguesHandler(input: ListLeaguesInput): Promise<LeagueListData> {
+export const listLeaguesHandler = async (input: ListLeaguesInput): Promise<LeagueListData> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store } = makeRepos();
 
@@ -242,7 +324,7 @@ export async function listLeaguesHandler(input: ListLeaguesInput): Promise<Leagu
   }
 
   return { leagues, groups, rulesets };
-}
+};
 
 /**
  * Builds the {@link LeagueDetailData} payload for the S7 detail view.
@@ -255,9 +337,9 @@ export async function listLeaguesHandler(input: ListLeaguesInput): Promise<Leagu
  * array. When `GameResult` arrives (with the D1 swap tracked in #39) this is
  * the only place that needs to start running the domain scoring module.
  */
-export async function getLeagueDetailHandler(
+export const getLeagueDetailHandler = async (
   input: LeagueDetailInput,
-): Promise<LeagueDetailData | null> {
+): Promise<LeagueDetailData | null> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store } = makeRepos();
 
@@ -369,7 +451,7 @@ export async function getLeagueDetailHandler(
     recentGames: recentGameRows,
     ranking,
   };
-}
+};
 
 /**
  * Creates a League under a Group owned by the caller. Returns the new
@@ -381,7 +463,7 @@ export async function getLeagueDetailHandler(
  * the schema allows it) the League is created with no default; the caller
  * will pick one per-Match later.
  */
-export async function createLeagueHandler(input: CreateLeagueInput): Promise<LeagueListItem> {
+export const createLeagueHandler = async (input: CreateLeagueInput): Promise<LeagueListItem> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store, service, leagues } = makeRepos();
 
@@ -417,7 +499,7 @@ export async function createLeagueHandler(input: CreateLeagueInput): Promise<Lea
 
   const groupNameById = new Map([[group.id, group.name] as const]);
   return projectListItem(created, store, groupNameById);
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server function wrappers
@@ -434,88 +516,6 @@ export const getLeagueDetailServerFn = createServerFn({ method: 'GET' })
 export const createLeagueServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createLeagueInput)
   .handler(({ data }) => createLeagueHandler(data));
-
-// ---------------------------------------------------------------------------
-// Projections
-// ---------------------------------------------------------------------------
-
-function projectListItem(
-  league: League,
-  store: GroupServerStore,
-  groupNameById: ReadonlyMap<string, string>,
-): LeagueListItem {
-  let matchCount = 0;
-  for (const m of store.matches.values()) {
-    if (m.leagueId === league.id) matchCount++;
-  }
-
-  let gameCount = 0;
-  let lastPlayedAt: string | null = null;
-  for (const g of store.games.values()) {
-    if (g.leagueId !== league.id) continue;
-    gameCount++;
-    if (lastPlayedAt === null || g.playedAt > lastPlayedAt) {
-      lastPlayedAt = g.playedAt;
-    }
-  }
-
-  // `playerCount` counts distinct Players who have a Game in this League.
-  // GameResult is not modelled yet; for MVP we approximate "participants" as
-  // the active Players in the League's Group. This keeps the card honest
-  // (the count reflects reality at the active-roster level) without
-  // overstating activity.
-  let playerCount = 0;
-  for (const p of store.players.values()) {
-    if (p.groupId !== league.groupId) continue;
-    if (!p.isActive) continue;
-    playerCount++;
-  }
-
-  return {
-    id: league.id,
-    groupId: league.groupId,
-    groupName: groupNameById.get(league.groupId) ?? '',
-    name: league.name,
-    format: league.format,
-    status: 'ACTIVE',
-    matchCount,
-    gameCount,
-    playerCount,
-    lastPlayedAt,
-    publicSlug: league.publicSlug,
-  };
-}
-
-function projectRulesetOption(
-  ruleset: Ruleset,
-  groupDefaultRulesetId: string | null,
-): LeagueRulesetOption {
-  return {
-    id: ruleset.id,
-    name: ruleset.name,
-    startingScore: ruleset.startingScore,
-    returnScore: ruleset.returnScore,
-    umaPattern: ruleset.umaPattern,
-    isGroupDefault: groupDefaultRulesetId === ruleset.id,
-  };
-}
-
-function compareMatchRows(a: LeagueMatchRow, b: LeagueMatchRow): number {
-  // Dated matches first, descending by date. Undated matches trail and are
-  // sorted by sequenceNumber descending (newer first); null sequenceNumber
-  // trails further.
-  if (a.heldAt !== null && b.heldAt !== null) {
-    return a.heldAt > b.heldAt ? -1 : a.heldAt < b.heldAt ? 1 : 0;
-  }
-  if (a.heldAt !== null) return -1;
-  if (b.heldAt !== null) return 1;
-  if (a.sequenceNumber !== null && b.sequenceNumber !== null) {
-    return b.sequenceNumber - a.sequenceNumber;
-  }
-  if (a.sequenceNumber !== null) return -1;
-  if (b.sequenceNumber !== null) return 1;
-  return 0;
-}
 
 // ---------------------------------------------------------------------------
 // In-memory repositories

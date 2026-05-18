@@ -30,6 +30,24 @@ import { authClient } from '../auth/client';
 import { OwnerShell } from '../components/layout';
 import type { OwnerSession } from '../components/layout/types';
 
+const OwnerLayout = () => {
+  const { ownerSession } = Route.useRouteContext();
+
+  return (
+    <OwnerShell
+      session={ownerSession}
+      activeGroup={null}
+      groups={null}
+      onSelectGroup={() => {
+        // No-op until the layout receives a real list of groups; see the
+        // "Session / active-group wiring" note above.
+      }}
+    >
+      <Outlet />
+    </OwnerShell>
+  );
+};
+
 export const Route = createFileRoute('/_owner')({
   beforeLoad: async () => {
     let session: Awaited<ReturnType<typeof authClient.getSession>> | null = null;
@@ -60,21 +78,3 @@ export const Route = createFileRoute('/_owner')({
   },
   component: OwnerLayout,
 });
-
-function OwnerLayout() {
-  const { ownerSession } = Route.useRouteContext();
-
-  return (
-    <OwnerShell
-      session={ownerSession}
-      activeGroup={null}
-      groups={null}
-      onSelectGroup={() => {
-        // No-op until the layout receives a real list of groups; see the
-        // "Session / active-group wiring" note above.
-      }}
-    >
-      <Outlet />
-    </OwnerShell>
-  );
-}

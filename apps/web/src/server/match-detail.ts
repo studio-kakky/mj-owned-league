@@ -92,7 +92,7 @@ interface ServerRepos {
   gameResultService: GameResultService;
 }
 
-function makeRepos(): ServerRepos {
+const makeRepos = (): ServerRepos => {
   const store = getGroupServerStore();
   const games = new MemoryGameRepository(store);
   const matches = new MemoryMatchRepository(store);
@@ -105,7 +105,7 @@ function makeRepos(): ServerRepos {
     gameService: new GameService(games, matches),
     gameResultService: new GameResultService(gameResults),
   };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Validators
@@ -154,6 +154,152 @@ export type GameSubmitServerInput = z.infer<typeof gameSubmitInput>;
 export type GameDeleteInput = z.infer<typeof gameDeleteInput>;
 
 // ---------------------------------------------------------------------------
+// Projection helpers
+// ---------------------------------------------------------------------------
+
+const projectGameRow = (
+  game: Game,
+  store: GroupServerStore,
+  playerNameById: ReadonlyMap<string, string>,
+  rulesetNameById: ReadonlyMap<string, string>,
+): MatchGameRow => {
+  const results: MatchGameResultRow[] = [];
+  for (const result of store.gameResults.values()) {
+    if (result.gameId !== game.id) continue;
+    results.push({
+      playerId: result.playerId,
+      playerName: playerNameById.get(result.playerId) ?? '（削除されたプレイヤー）',
+      rawScore: result.rawScore,
+      points: result.points,
+      rank: result.rank,
+      tobiRole: result.tobiRole,
+    });
+  }
+  results.sort((a, b) => a.rank - b.rank);
+
+  return {
+    id: game.id,
+    playedAt: game.playedAt,
+    rulesetId: game.rulesetId,
+    rulesetName: rulesetNameById.get(game.rulesetId) ?? '（削除された Ruleset）',
+    results,
+  };
+};
+
+const projectRulesetOption = (
+  ruleset: Ruleset,
+  matchDefaultRulesetId: string | null,
+  groupDefaultRulesetId: string | null,
+): MatchRulesetOption => {
+  return {
+    id: ruleset.id,
+    name: ruleset.name,
+    startingScore: ruleset.startingScore,
+    returnScore: ruleset.returnScore,
+    umaPattern: ruleset.umaPattern,
+    tobiEnabled: ruleset.tobiEnabled,
+    tobiPoint: ruleset.tobiPoint,
+    isMatchDefault: matchDefaultRulesetId === ruleset.id,
+    isGroupDefault: groupDefaultRulesetId === ruleset.id,
+  };
+};
+
+const computeMatchRanking = (
+  games: ReadonlyArray<MatchGameRow>,
+  playerNameById: ReadonlyMap<string, string>,
+  format: LeagueFormat,
+): MatchRankingRow[] => {
+  const lastRank = format.startsWith('3P') ? 3 : 4;
+  const acc = new Map<
+    string,
+    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
+  >();
+
+  for (const game of games) {
+    for (const r of game.results) {
+      const entry = acc.get(r.playerId) ?? {
+        gameCount: 0,
+        totalPoints: 0,
+        topCount: 0,
+        lastCount: 0,
+      };
+      entry.gameCount += 1;
+      entry.totalPoints += r.points;
+      if (r.rank === 1) entry.topCount += 1;
+      if (r.rank === lastRank) entry.lastCount += 1;
+      acc.set(r.playerId, entry);
+    }
+  }
+
+  const rows: MatchRankingRow[] = [];
+  for (const [playerId, entry] of acc.entries()) {
+    rows.push({
+      playerId,
+      playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
+      gameCount: entry.gameCount,
+      totalPoints: entry.totalPoints,
+      averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
+      topCount: entry.topCount,
+      lastCount: entry.lastCount,
+    });
+  }
+
+  // totalPoints desc; tie-breaker = averagePoints desc, then playerName for stability.
+  rows.sort((a, b) => {
+    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
+    return a.playerName.localeCompare(b.playerName);
+  });
+
+  return rows;
+};
+
+const compareMatchListItems = (
+  a: MatchListItem,
+  b: MatchListItem,
+  leagueScoped: boolean,
+): number => {
+  if (leagueScoped) {
+    // sequenceNumber desc; nulls last.
+    if (a.sequenceNumber !== null && b.sequenceNumber !== null) {
+      return b.sequenceNumber - a.sequenceNumber;
+    }
+    if (a.sequenceNumber !== null) return -1;
+    if (b.sequenceNumber !== null) return 1;
+  }
+  // heldAt desc; nulls fall through to lastPlayedAt.
+  const dateA = a.heldAt ?? a.lastPlayedAt;
+  const dateB = b.heldAt ?? b.lastPlayedAt;
+  if (dateA !== null && dateB !== null) {
+    return dateA > dateB ? -1 : dateA < dateB ? 1 : 0;
+  }
+  if (dateA !== null) return -1;
+  if (dateB !== null) return 1;
+  return 0;
+};
+
+// ---------------------------------------------------------------------------
+// Public input bridges — the route layer hands these `GameSubmitInput` shapes
+// straight from the modal; the server-side schemas already match.
+// ---------------------------------------------------------------------------
+
+/** Type-narrowing bridge so the route layer can spread the modal payload. */
+export const bridgeGameSubmit = (ownerId: string, input: GameSubmitInput): GameSubmitServerInput => {
+  return {
+    ownerId,
+    matchId: input.matchId,
+    gameId: input.gameId,
+    rulesetId: input.rulesetId,
+    playedAt: input.playedAt,
+    players: input.players.map((p) => ({
+      playerId: p.playerId,
+      rawScore: p.rawScore,
+      tobiRole: p.tobiRole,
+    })),
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -162,9 +308,9 @@ export type GameDeleteInput = z.infer<typeof gameDeleteInput>;
  * Match does not exist / belongs to a different Owner. The route surfaces
  * `null` as a redirect rather than throwing.
  */
-export async function getMatchDetailHandler(
+export const getMatchDetailHandler = async (
   input: MatchDetailInput,
-): Promise<MatchDetailData | null> {
+): Promise<MatchDetailData | null> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store } = makeRepos();
 
@@ -226,14 +372,14 @@ export async function getMatchDetailHandler(
     ranking,
     games: gameRows,
   };
-}
+};
 
 /**
  * Returns the Match list payload. When `leagueId` is supplied the list is
  * filtered to that League; otherwise every Match across the Owner's Groups
  * is surfaced.
  */
-export async function listMatchesHandler(input: MatchListInput): Promise<MatchListData> {
+export const listMatchesHandler = async (input: MatchListInput): Promise<MatchListData> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store } = makeRepos();
 
@@ -341,7 +487,7 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
     },
     leagueOptions: leagueOptionRows,
   };
-}
+};
 
 /**
  * Creates or updates a Game with its GameResult rows. The full scoring
@@ -353,7 +499,9 @@ export async function listMatchesHandler(input: MatchListInput): Promise<MatchLi
  * the players / scores / ruleset are replaced. The integrity check (`Σ
  * rawScore = startingScore × n`) runs identically for create and update.
  */
-export async function submitGameHandler(input: GameSubmitServerInput): Promise<{ gameId: string }> {
+export const submitGameHandler = async (
+  input: GameSubmitServerInput,
+): Promise<{ gameId: string }> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store, gameService, gameResultService } = makeRepos();
 
@@ -452,9 +600,9 @@ export async function submitGameHandler(input: GameSubmitServerInput): Promise<{
   await gameResultService.replaceForGame(gameId, resultRows);
 
   return { gameId };
-}
+};
 
-export async function deleteGameHandler(input: GameDeleteInput): Promise<{ deleted: boolean }> {
+export const deleteGameHandler = async (input: GameDeleteInput): Promise<{ deleted: boolean }> => {
   seedDevDataIfEmpty(input.ownerId);
   const { store, gameService, gameResultService } = makeRepos();
 
@@ -468,149 +616,7 @@ export async function deleteGameHandler(input: GameDeleteInput): Promise<{ delet
   await gameResultService.deleteByGame(game.id);
   const deleted = await gameService.delete(game.id);
   return { deleted };
-}
-
-// ---------------------------------------------------------------------------
-// Projection helpers
-// ---------------------------------------------------------------------------
-
-function projectGameRow(
-  game: Game,
-  store: GroupServerStore,
-  playerNameById: ReadonlyMap<string, string>,
-  rulesetNameById: ReadonlyMap<string, string>,
-): MatchGameRow {
-  const results: MatchGameResultRow[] = [];
-  for (const result of store.gameResults.values()) {
-    if (result.gameId !== game.id) continue;
-    results.push({
-      playerId: result.playerId,
-      playerName: playerNameById.get(result.playerId) ?? '（削除されたプレイヤー）',
-      rawScore: result.rawScore,
-      points: result.points,
-      rank: result.rank,
-      tobiRole: result.tobiRole,
-    });
-  }
-  results.sort((a, b) => a.rank - b.rank);
-
-  return {
-    id: game.id,
-    playedAt: game.playedAt,
-    rulesetId: game.rulesetId,
-    rulesetName: rulesetNameById.get(game.rulesetId) ?? '（削除された Ruleset）',
-    results,
-  };
-}
-
-function projectRulesetOption(
-  ruleset: Ruleset,
-  matchDefaultRulesetId: string | null,
-  groupDefaultRulesetId: string | null,
-): MatchRulesetOption {
-  return {
-    id: ruleset.id,
-    name: ruleset.name,
-    startingScore: ruleset.startingScore,
-    returnScore: ruleset.returnScore,
-    umaPattern: ruleset.umaPattern,
-    tobiEnabled: ruleset.tobiEnabled,
-    tobiPoint: ruleset.tobiPoint,
-    isMatchDefault: matchDefaultRulesetId === ruleset.id,
-    isGroupDefault: groupDefaultRulesetId === ruleset.id,
-  };
-}
-
-function computeMatchRanking(
-  games: ReadonlyArray<MatchGameRow>,
-  playerNameById: ReadonlyMap<string, string>,
-  format: LeagueFormat,
-): MatchRankingRow[] {
-  const lastRank = format.startsWith('3P') ? 3 : 4;
-  const acc = new Map<
-    string,
-    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
-  >();
-
-  for (const game of games) {
-    for (const r of game.results) {
-      const entry = acc.get(r.playerId) ?? {
-        gameCount: 0,
-        totalPoints: 0,
-        topCount: 0,
-        lastCount: 0,
-      };
-      entry.gameCount += 1;
-      entry.totalPoints += r.points;
-      if (r.rank === 1) entry.topCount += 1;
-      if (r.rank === lastRank) entry.lastCount += 1;
-      acc.set(r.playerId, entry);
-    }
-  }
-
-  const rows: MatchRankingRow[] = [];
-  for (const [playerId, entry] of acc.entries()) {
-    rows.push({
-      playerId,
-      playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
-      gameCount: entry.gameCount,
-      totalPoints: entry.totalPoints,
-      averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
-      topCount: entry.topCount,
-      lastCount: entry.lastCount,
-    });
-  }
-
-  // totalPoints desc; tie-breaker = averagePoints desc, then playerName for stability.
-  rows.sort((a, b) => {
-    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
-    return a.playerName.localeCompare(b.playerName);
-  });
-
-  return rows;
-}
-
-function compareMatchListItems(a: MatchListItem, b: MatchListItem, leagueScoped: boolean): number {
-  if (leagueScoped) {
-    // sequenceNumber desc; nulls last.
-    if (a.sequenceNumber !== null && b.sequenceNumber !== null) {
-      return b.sequenceNumber - a.sequenceNumber;
-    }
-    if (a.sequenceNumber !== null) return -1;
-    if (b.sequenceNumber !== null) return 1;
-  }
-  // heldAt desc; nulls fall through to lastPlayedAt.
-  const dateA = a.heldAt ?? a.lastPlayedAt;
-  const dateB = b.heldAt ?? b.lastPlayedAt;
-  if (dateA !== null && dateB !== null) {
-    return dateA > dateB ? -1 : dateA < dateB ? 1 : 0;
-  }
-  if (dateA !== null) return -1;
-  if (dateB !== null) return 1;
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// Public input bridges — the route layer hands these `GameSubmitInput` shapes
-// straight from the modal; the server-side schemas already match.
-// ---------------------------------------------------------------------------
-
-/** Type-narrowing bridge so the route layer can spread the modal payload. */
-export function bridgeGameSubmit(ownerId: string, input: GameSubmitInput): GameSubmitServerInput {
-  return {
-    ownerId,
-    matchId: input.matchId,
-    gameId: input.gameId,
-    rulesetId: input.rulesetId,
-    playedAt: input.playedAt,
-    players: input.players.map((p) => ({
-      playerId: p.playerId,
-      rawScore: p.rawScore,
-      tobiRole: p.tobiRole,
-    })),
-  };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server function wrappers

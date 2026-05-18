@@ -43,13 +43,13 @@ export interface GroupFormModalProps {
   onSubmit: (name: string) => void | Promise<void>;
 }
 
-export function GroupFormModal({
+export const GroupFormModal = ({
   open,
   mode,
   initialName,
   onClose,
   onSubmit,
-}: GroupFormModalProps) {
+}: GroupFormModalProps) => {
   const titleId = useId();
   const inputId = useId();
   // Programmatic focus rather than the JSX `autoFocus` attribute. Biome's
@@ -173,4 +173,4 @@ export function GroupFormModal({
       </form>
     </Modal>
   );
-}
+};

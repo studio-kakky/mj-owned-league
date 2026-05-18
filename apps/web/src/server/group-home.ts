@@ -58,6 +58,148 @@ const groupHomeInput = z.object({
 
 export type GroupHomeInput = z.infer<typeof groupHomeInput>;
 
+// ---------------------------------------------------------------------------
+// Projections — kept as small top-level functions so each one is
+// independently testable. Each returns the trimmed display shape ready for
+// the screen.
+// ---------------------------------------------------------------------------
+
+const projectLeagues = (
+  leagues: ReadonlyArray<League>,
+  matchCountByLeague: ReadonlyMap<string, number>,
+  gameCountByLeague: ReadonlyMap<string, number>,
+  lastPlayedAtByLeague: ReadonlyMap<string, string>,
+): ReadonlyArray<GroupHomeLeagueRow> => {
+  const rows: GroupHomeLeagueRow[] = leagues.map(
+    (l): GroupHomeLeagueRow => ({
+      id: l.id,
+      name: l.name,
+      matchCount: matchCountByLeague.get(l.id) ?? 0,
+      gameCount: gameCountByLeague.get(l.id) ?? 0,
+      lastPlayedAt: lastPlayedAtByLeague.get(l.id) ?? null,
+    }),
+  );
+  // Most-recently-active first. Leagues with no games sort behind any
+  // League that does; among themselves they keep insertion order.
+  rows.sort((a, b) => {
+    if (a.lastPlayedAt === null && b.lastPlayedAt === null) return 0;
+    if (a.lastPlayedAt === null) return 1;
+    if (b.lastPlayedAt === null) return -1;
+    return a.lastPlayedAt > b.lastPlayedAt ? -1 : 1;
+  });
+  return rows.slice(0, GROUP_HOME_LEAGUES_LIMIT);
+};
+
+const projectMatches = (
+  matches: ReadonlyArray<Match>,
+  gameCountByMatch: ReadonlyMap<string, number>,
+  leagueNameById: ReadonlyMap<string, string>,
+): ReadonlyArray<GroupHomeMatchRow> => {
+  const rows: GroupHomeMatchRow[] = matches.map(
+    (m): GroupHomeMatchRow => ({
+      id: m.id,
+      leagueId: m.leagueId,
+      leagueName: m.leagueId === null ? null : (leagueNameById.get(m.leagueId) ?? null),
+      name: m.name,
+      sequenceNumber: m.sequenceNumber,
+      heldAt: m.heldAt,
+      gameCount: gameCountByMatch.get(m.id) ?? 0,
+    }),
+  );
+  // heldAt desc; undated matches trail. Mirrors the S9 cross-group sort.
+  rows.sort((a, b) => {
+    if (a.heldAt !== null && b.heldAt !== null) {
+      return a.heldAt > b.heldAt ? -1 : a.heldAt < b.heldAt ? 1 : 0;
+    }
+    if (a.heldAt !== null) return -1;
+    if (b.heldAt !== null) return 1;
+    return 0;
+  });
+  return rows.slice(0, GROUP_HOME_MATCHES_LIMIT);
+};
+
+const projectRanking = (
+  groupId: string,
+  games: ReadonlyArray<Game>,
+  store: ReturnType<typeof getGroupServerStore>,
+  playerNameById: ReadonlyMap<string, string>,
+): ReadonlyArray<GroupHomeRankingRow> => {
+  // Find this Group's GameResult rows. We iterate `store.gameResults` once
+  // and filter against the set of game ids built above to keep the cost
+  // proportional to the result count, not the cross-product.
+  //
+  // `lastRank` varies per Game (3 for 3P games, 4 for 4P) so we look it up
+  // per row via the parent Game's `format`. Most Groups only use one
+  // format, but mixing is allowed by the schema.
+  const gameFormatById = new Map<string, string>();
+  for (const g of games) gameFormatById.set(g.id, g.format);
+
+  const acc = new Map<
+    string,
+    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
+  >();
+  for (const result of store.gameResults.values()) {
+    const format = gameFormatById.get(result.gameId);
+    if (format === undefined) continue; // not in this Group
+    const entry = acc.get(result.playerId) ?? {
+      gameCount: 0,
+      totalPoints: 0,
+      topCount: 0,
+      lastCount: 0,
+    };
+    entry.gameCount += 1;
+    entry.totalPoints += result.points;
+    if (result.rank === 1) entry.topCount += 1;
+    const lastRank = format.startsWith('3P') ? 3 : 4;
+    if (result.rank === lastRank) entry.lastCount += 1;
+    acc.set(result.playerId, entry);
+  }
+
+  const rows: GroupHomeRankingRow[] = [...acc.entries()].map(
+    ([playerId, entry]): GroupHomeRankingRow => ({
+      playerId,
+      playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
+      gameCount: entry.gameCount,
+      totalPoints: entry.totalPoints,
+      averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
+      topCount: entry.topCount,
+      lastCount: entry.lastCount,
+    }),
+  );
+  rows.sort((a, b) => {
+    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
+    return a.playerName.localeCompare(b.playerName);
+  });
+  // Suppress the unused-binding warning the linter would raise for groupId.
+  // The argument exists so callers spell their intent ("ranking *for this
+  // Group*") and so future per-Group filtering (e.g. exclude inactive
+  // players) has a stable hook.
+  void groupId;
+  return rows;
+};
+
+const projectRecentGames = (
+  games: ReadonlyArray<Game>,
+  matchNameById: ReadonlyMap<string, string>,
+  leagueNameById: ReadonlyMap<string, string>,
+): ReadonlyArray<GroupHomeRecentGameRow> => {
+  return games
+    .slice()
+    .sort((a, b) => (a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0))
+    .slice(0, GROUP_HOME_RECENT_GAMES_LIMIT)
+    .map(
+      (g): GroupHomeRecentGameRow => ({
+        id: g.id,
+        matchId: g.matchId,
+        matchName: g.matchId === null ? null : (matchNameById.get(g.matchId) ?? null),
+        leagueId: g.leagueId,
+        leagueName: g.leagueId === null ? null : (leagueNameById.get(g.leagueId) ?? null),
+        playedAt: g.playedAt,
+      }),
+    );
+};
+
 /**
  * Builds the {@link GroupHomeData} payload for the target Group, or returns
  * `null` when the Group does not exist / is not owned by the caller.
@@ -70,7 +212,7 @@ export type GroupHomeInput = z.infer<typeof groupHomeInput>;
  *      `GROUP_HOME_*_LIMIT` constant.
  *   4. Aggregate the GameResult rows into the Group-wide ranking.
  */
-export async function groupHomeHandler(input: GroupHomeInput): Promise<GroupHomeData | null> {
+export const groupHomeHandler = async (input: GroupHomeInput): Promise<GroupHomeData | null> => {
   seedDevDataIfEmpty(input.ownerId);
   const store = getGroupServerStore();
 
@@ -153,150 +295,8 @@ export async function groupHomeHandler(input: GroupHomeInput): Promise<GroupHome
     ranking: projectRanking(group.id, games, store, playerNameById),
     recentGames: projectRecentGames(games, matchNameById, leagueNameById),
   };
-}
+};
 
 export const getGroupHomeServerFn = createServerFn({ method: 'GET' })
   .inputValidator(groupHomeInput)
   .handler(({ data }) => groupHomeHandler(data));
-
-// ---------------------------------------------------------------------------
-// Projections — kept as small top-level functions so each one is
-// independently testable. Each returns the trimmed display shape ready for
-// the screen.
-// ---------------------------------------------------------------------------
-
-function projectLeagues(
-  leagues: ReadonlyArray<League>,
-  matchCountByLeague: ReadonlyMap<string, number>,
-  gameCountByLeague: ReadonlyMap<string, number>,
-  lastPlayedAtByLeague: ReadonlyMap<string, string>,
-): ReadonlyArray<GroupHomeLeagueRow> {
-  const rows: GroupHomeLeagueRow[] = leagues.map(
-    (l): GroupHomeLeagueRow => ({
-      id: l.id,
-      name: l.name,
-      matchCount: matchCountByLeague.get(l.id) ?? 0,
-      gameCount: gameCountByLeague.get(l.id) ?? 0,
-      lastPlayedAt: lastPlayedAtByLeague.get(l.id) ?? null,
-    }),
-  );
-  // Most-recently-active first. Leagues with no games sort behind any
-  // League that does; among themselves they keep insertion order.
-  rows.sort((a, b) => {
-    if (a.lastPlayedAt === null && b.lastPlayedAt === null) return 0;
-    if (a.lastPlayedAt === null) return 1;
-    if (b.lastPlayedAt === null) return -1;
-    return a.lastPlayedAt > b.lastPlayedAt ? -1 : 1;
-  });
-  return rows.slice(0, GROUP_HOME_LEAGUES_LIMIT);
-}
-
-function projectMatches(
-  matches: ReadonlyArray<Match>,
-  gameCountByMatch: ReadonlyMap<string, number>,
-  leagueNameById: ReadonlyMap<string, string>,
-): ReadonlyArray<GroupHomeMatchRow> {
-  const rows: GroupHomeMatchRow[] = matches.map(
-    (m): GroupHomeMatchRow => ({
-      id: m.id,
-      leagueId: m.leagueId,
-      leagueName: m.leagueId === null ? null : (leagueNameById.get(m.leagueId) ?? null),
-      name: m.name,
-      sequenceNumber: m.sequenceNumber,
-      heldAt: m.heldAt,
-      gameCount: gameCountByMatch.get(m.id) ?? 0,
-    }),
-  );
-  // heldAt desc; undated matches trail. Mirrors the S9 cross-group sort.
-  rows.sort((a, b) => {
-    if (a.heldAt !== null && b.heldAt !== null) {
-      return a.heldAt > b.heldAt ? -1 : a.heldAt < b.heldAt ? 1 : 0;
-    }
-    if (a.heldAt !== null) return -1;
-    if (b.heldAt !== null) return 1;
-    return 0;
-  });
-  return rows.slice(0, GROUP_HOME_MATCHES_LIMIT);
-}
-
-function projectRanking(
-  groupId: string,
-  games: ReadonlyArray<Game>,
-  store: ReturnType<typeof getGroupServerStore>,
-  playerNameById: ReadonlyMap<string, string>,
-): ReadonlyArray<GroupHomeRankingRow> {
-  // Find this Group's GameResult rows. We iterate `store.gameResults` once
-  // and filter against the set of game ids built above to keep the cost
-  // proportional to the result count, not the cross-product.
-  //
-  // `lastRank` varies per Game (3 for 3P games, 4 for 4P) so we look it up
-  // per row via the parent Game's `format`. Most Groups only use one
-  // format, but mixing is allowed by the schema.
-  const gameFormatById = new Map<string, string>();
-  for (const g of games) gameFormatById.set(g.id, g.format);
-
-  const acc = new Map<
-    string,
-    { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
-  >();
-  for (const result of store.gameResults.values()) {
-    const format = gameFormatById.get(result.gameId);
-    if (format === undefined) continue; // not in this Group
-    const entry = acc.get(result.playerId) ?? {
-      gameCount: 0,
-      totalPoints: 0,
-      topCount: 0,
-      lastCount: 0,
-    };
-    entry.gameCount += 1;
-    entry.totalPoints += result.points;
-    if (result.rank === 1) entry.topCount += 1;
-    const lastRank = format.startsWith('3P') ? 3 : 4;
-    if (result.rank === lastRank) entry.lastCount += 1;
-    acc.set(result.playerId, entry);
-  }
-
-  const rows: GroupHomeRankingRow[] = [...acc.entries()].map(
-    ([playerId, entry]): GroupHomeRankingRow => ({
-      playerId,
-      playerName: playerNameById.get(playerId) ?? '（削除されたプレイヤー）',
-      gameCount: entry.gameCount,
-      totalPoints: entry.totalPoints,
-      averagePoints: entry.gameCount === 0 ? 0 : entry.totalPoints / entry.gameCount,
-      topCount: entry.topCount,
-      lastCount: entry.lastCount,
-    }),
-  );
-  rows.sort((a, b) => {
-    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
-    if (a.averagePoints !== b.averagePoints) return b.averagePoints - a.averagePoints;
-    return a.playerName.localeCompare(b.playerName);
-  });
-  // Suppress the unused-binding warning the linter would raise for groupId.
-  // The argument exists so callers spell their intent ("ranking *for this
-  // Group*") and so future per-Group filtering (e.g. exclude inactive
-  // players) has a stable hook.
-  void groupId;
-  return rows;
-}
-
-function projectRecentGames(
-  games: ReadonlyArray<Game>,
-  matchNameById: ReadonlyMap<string, string>,
-  leagueNameById: ReadonlyMap<string, string>,
-): ReadonlyArray<GroupHomeRecentGameRow> {
-  return games
-    .slice()
-    .sort((a, b) => (a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0))
-    .slice(0, GROUP_HOME_RECENT_GAMES_LIMIT)
-    .map(
-      (g): GroupHomeRecentGameRow => ({
-        id: g.id,
-        matchId: g.matchId,
-        matchName: g.matchId === null ? null : (matchNameById.get(g.matchId) ?? null),
-        leagueId: g.leagueId,
-        leagueName: g.leagueId === null ? null : (leagueNameById.get(g.leagueId) ?? null),
-        playedAt: g.playedAt,
-      }),
-    );
-}

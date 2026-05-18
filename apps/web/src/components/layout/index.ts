@@ -7,4 +7,5 @@ export type { OwnerShellProps } from './OwnerShell';
 export { OwnerShell } from './OwnerShell';
 export type { PublicShellProps } from './PublicShell';
 export { PublicShell } from './PublicShell';
+export { RootDocument } from './RootDocument';
 export type { GroupSummary, OwnerSession } from './types';

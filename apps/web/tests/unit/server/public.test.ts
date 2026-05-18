@@ -28,13 +28,13 @@ beforeEach(() => {
   resetGroupServerStoreForTests();
 });
 
-async function ensureSeed(): Promise<{ publicSlug: string }> {
+const ensureSeed = async (): Promise<{ publicSlug: string }> => {
   await listLeaguesHandler({ ownerId: owner });
   const store = getGroupServerStore();
   const league = [...store.leagues.values()].find((l) => l.name === '2026 春シーズン');
   if (!league) throw new Error('expected seeded league');
   return { publicSlug: league.publicSlug };
-}
+};
 
 describe('getPublicLeagueHandler', () => {
   it('returns the projected payload for a known slug', async () => {

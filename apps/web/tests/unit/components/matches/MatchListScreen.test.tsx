@@ -42,7 +42,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 import { MatchListScreen } from '../../../../src/components/matches/MatchListScreen';
 
-function makeItem(over: Partial<Parameters<typeof MatchListScreen>[0]['matches'][number]> = {}) {
+const makeItem = (
+  over: Partial<Parameters<typeof MatchListScreen>[0]['matches'][number]> = {},
+) => {
   return {
     id: 'm1',
     groupId: 'g1',
@@ -56,7 +58,7 @@ function makeItem(over: Partial<Parameters<typeof MatchListScreen>[0]['matches']
     lastPlayedAt: '2026-05-08T00:00:00.000Z',
     ...over,
   };
-}
+};
 
 describe('MatchListScreen', () => {
   it('renders the League-scoped header and links to /leagues/$leagueId', () => {

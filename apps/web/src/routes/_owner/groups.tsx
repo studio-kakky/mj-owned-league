@@ -40,21 +40,7 @@ import {
   renameGroupServerFn,
 } from '../../server/groups';
 
-export const Route = createFileRoute('/_owner/groups')({
-  // The active owner id comes from the `_owner` parent layout's
-  // `beforeLoad`, which is exposed on `context.ownerSession`. TanStack Router
-  // re-runs the loader when the route is invalidated (after mutations
-  // below), which is exactly the cadence we want.
-  loader: async ({ context }) => {
-    const items = await listGroupsServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
-    });
-    return { items };
-  },
-  component: GroupsPage,
-});
-
-function GroupsPage() {
+const GroupsPage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { items } = Route.useLoaderData();
@@ -95,4 +81,18 @@ function GroupsPage() {
       onDeleteGroup={handleDelete}
     />
   );
-}
+};
+
+export const Route = createFileRoute('/_owner/groups')({
+  // The active owner id comes from the `_owner` parent layout's
+  // `beforeLoad`, which is exposed on `context.ownerSession`. TanStack Router
+  // re-runs the loader when the route is invalidated (after mutations
+  // below), which is exactly the cadence we want.
+  loader: async ({ context }) => {
+    const items = await listGroupsServerFn({
+      data: { ownerId: context.ownerSession.ownerId },
+    });
+    return { items };
+  },
+  component: GroupsPage,
+});

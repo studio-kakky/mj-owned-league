@@ -31,7 +31,7 @@ export interface PlayerDeleteConfirmModalProps {
   onConfirmDeactivate: () => void | Promise<void>;
 }
 
-export function PlayerDeleteConfirmModal({
+export const PlayerDeleteConfirmModal = ({
   open,
   playerName,
   hasHistory,
@@ -39,7 +39,7 @@ export function PlayerDeleteConfirmModal({
   onClose,
   onConfirmDelete,
   onConfirmDeactivate,
-}: PlayerDeleteConfirmModalProps) {
+}: PlayerDeleteConfirmModalProps) => {
   const titleId = useId();
   const [pending, setPending] = useState<'delete' | 'deactivate' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -129,4 +129,4 @@ export function PlayerDeleteConfirmModal({
       </div>
     </Modal>
   );
-}
+};

@@ -24,20 +24,7 @@ import {
   submitGameServerFn,
 } from '../../server/match-detail';
 
-export const Route = createFileRoute('/_owner/matches/$matchId')({
-  loader: async ({ context, params }) => {
-    const data = await getMatchDetailServerFn({
-      data: { ownerId: context.ownerSession.ownerId, matchId: params.matchId },
-    });
-    if (data === null) {
-      throw redirect({ to: '/matches' });
-    }
-    return { data };
-  },
-  component: MatchDetailPage,
-});
-
-function MatchDetailPage() {
+const MatchDetailPage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
@@ -65,4 +52,17 @@ function MatchDetailPage() {
       onDeleteGame={handleDeleteGame}
     />
   );
-}
+};
+
+export const Route = createFileRoute('/_owner/matches/$matchId')({
+  loader: async ({ context, params }) => {
+    const data = await getMatchDetailServerFn({
+      data: { ownerId: context.ownerSession.ownerId, matchId: params.matchId },
+    });
+    if (data === null) {
+      throw redirect({ to: '/matches' });
+    }
+    return { data };
+  },
+  component: MatchDetailPage,
+});

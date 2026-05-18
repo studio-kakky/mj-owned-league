@@ -15,6 +15,11 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { LeagueDetailScreen } from '../../components/leagues';
 import { getLeagueDetailServerFn } from '../../server/leagues';
 
+const LeagueDetailPage = () => {
+  const { data } = Route.useLoaderData();
+  return <LeagueDetailScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_owner/leagues/$leagueId')({
   loader: async ({ context, params }) => {
     const data = await getLeagueDetailServerFn({
@@ -29,8 +34,3 @@ export const Route = createFileRoute('/_owner/leagues/$leagueId')({
   },
   component: LeagueDetailPage,
 });
-
-function LeagueDetailPage() {
-  const { data } = Route.useLoaderData();
-  return <LeagueDetailScreen data={data} />;
-}

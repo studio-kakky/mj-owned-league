@@ -24,7 +24,7 @@ export interface ModalProps {
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, labelledBy, testId, children }: ModalProps) {
+export const Modal = ({ open, onClose, labelledBy, testId, children }: ModalProps) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -62,4 +62,4 @@ export function Modal({ open, onClose, labelledBy, testId, children }: ModalProp
       </div>
     </div>
   );
-}
+};

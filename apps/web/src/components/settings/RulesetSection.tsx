@@ -34,14 +34,14 @@ type ModalState =
   | { kind: 'edit'; ruleset: SettingsRulesetItem }
   | { kind: 'delete'; ruleset: SettingsRulesetItem };
 
-export function RulesetSection({
+export const RulesetSection = ({
   rulesets,
   disabled = false,
   onCreate,
   onUpdate,
   onDelete,
   onSetDefault,
-}: RulesetSectionProps) {
+}: RulesetSectionProps) => {
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const closeModal = () => setModal({ kind: 'none' });
 
@@ -189,4 +189,4 @@ export function RulesetSection({
       />
     </section>
   );
-}
+};

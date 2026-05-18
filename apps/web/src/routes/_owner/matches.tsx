@@ -31,6 +31,13 @@ const searchSchema = z.object({
   groupId: z.string().min(1).optional(),
 });
 
+const MatchesPage = () => {
+  const { data } = Route.useLoaderData();
+  return (
+    <MatchListScreen matches={data.matches} scope={data.scope} leagueOptions={data.leagueOptions} />
+  );
+};
+
 export const Route = createFileRoute('/_owner/matches')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
@@ -46,10 +53,3 @@ export const Route = createFileRoute('/_owner/matches')({
   },
   component: MatchesPage,
 });
-
-function MatchesPage() {
-  const { data } = Route.useLoaderData();
-  return (
-    <MatchListScreen matches={data.matches} scope={data.scope} leagueOptions={data.leagueOptions} />
-  );
-}

@@ -107,12 +107,12 @@ interface ServerDeps {
   repo: InvitationRepository;
 }
 
-function makeDeps(): ServerDeps {
+const makeDeps = (): ServerDeps => {
   const store = getGroupServerStore();
   const repo = new MemoryInvitationRepository(store);
   const service = new InvitationService(repo);
   return { service, repo };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Input schemas / types
@@ -146,6 +146,42 @@ export interface InvitationAcceptHandlerDeps {
 }
 
 // ---------------------------------------------------------------------------
+// Issuer email resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Default issuer-email lookup. Reads from the in-memory store's `owners`
+ * shape — except the store does not currently track owners as a Map (the
+ * Owner row materialises in D1 via Better Auth's hook, not in this in-memory
+ * fixture). For the in-memory dev path we fall back to the Owner id itself
+ * as a stand-in: it is opaque, but it gives the screen *something* to render
+ * during dev before D1 access lands (#39). Once #39 ships this function
+ * grows a D1 read via {@link findOwnerById}.
+ *
+ * Tests should override this via `deps.resolveIssuerEmail` so the projection
+ * is deterministic regardless of which seam ends up live.
+ */
+const defaultResolveIssuerEmail = async (ownerId: string): Promise<string | null> => {
+  // Cheap path: if the seeded fixture happened to populate something we can
+  // surface, prefer that. The dev seed in `groups-store.ts` does not
+  // currently insert into `owners` — there is no `Map<string, Owner>` to
+  // walk — so for now we just return the ownerId as a placeholder string.
+  //
+  // The reason we don't try `findOwnerById(createDb(env.DB), ownerId)` here
+  // is that `env.DB` is not reachable from the TanStack Start server
+  // function context (#39). Once it is, replace this body with:
+  //
+  //   const owner = await findOwnerById(createDb(env.DB), ownerId);
+  //   return owner?.email ?? null;
+  //
+  // Static-reference both `createDb` and `findOwnerById` so the follow-up
+  // call site lands without an unused-import churn.
+  void createDb;
+  void findOwnerById;
+  return ownerId;
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -160,10 +196,10 @@ export interface InvitationAcceptHandlerDeps {
  * always: an Owner first lists/issues an invitation (which seeds), then the
  * invitee opens the URL.
  */
-export async function verifyInvitationHandler(
+export const verifyInvitationHandler = async (
   input: VerifyInvitationInput,
   deps: InvitationAcceptHandlerDeps = {},
-): Promise<VerifyInvitationResult> {
+): Promise<VerifyInvitationResult> => {
   const { service } = makeDeps();
   const resolveIssuerEmail = deps.resolveIssuerEmail ?? defaultResolveIssuerEmail;
 
@@ -189,7 +225,7 @@ export async function verifyInvitationHandler(
     // Anything else is a bug; let it bubble so we get a 500 + stack trace.
     throw cause;
   }
-}
+};
 
 /**
  * Marks the invitation CONSUMED on behalf of the supplied user. Throws
@@ -205,10 +241,10 @@ export async function verifyInvitationHandler(
  *   the unhappy-path mitigation lives in the docstring above (a future issue
  *   tightens it).
  */
-export async function consumeInvitationHandler(
+export const consumeInvitationHandler = async (
   input: ConsumeInvitationInput,
   deps: InvitationAcceptHandlerDeps = {},
-): Promise<{ consumed: true }> {
+): Promise<{ consumed: true }> => {
   const { repo } = makeDeps();
   const service =
     deps.now === undefined
@@ -217,7 +253,7 @@ export async function consumeInvitationHandler(
 
   await service.consume(input.token, input.userId);
   return { consumed: true };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server functions
@@ -230,42 +266,6 @@ export const verifyInvitationServerFn = createServerFn({ method: 'GET' })
 export const consumeInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(consumeInvitationInput)
   .handler(({ data }) => consumeInvitationHandler(data));
-
-// ---------------------------------------------------------------------------
-// Issuer email resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Default issuer-email lookup. Reads from the in-memory store's `owners`
- * shape — except the store does not currently track owners as a Map (the
- * Owner row materialises in D1 via Better Auth's hook, not in this in-memory
- * fixture). For the in-memory dev path we fall back to the Owner id itself
- * as a stand-in: it is opaque, but it gives the screen *something* to render
- * during dev before D1 access lands (#39). Once #39 ships this function
- * grows a D1 read via {@link findOwnerById}.
- *
- * Tests should override this via `deps.resolveIssuerEmail` so the projection
- * is deterministic regardless of which seam ends up live.
- */
-async function defaultResolveIssuerEmail(ownerId: string): Promise<string | null> {
-  // Cheap path: if the seeded fixture happened to populate something we can
-  // surface, prefer that. The dev seed in `groups-store.ts` does not
-  // currently insert into `owners` — there is no `Map<string, Owner>` to
-  // walk — so for now we just return the ownerId as a placeholder string.
-  //
-  // The reason we don't try `findOwnerById(createDb(env.DB), ownerId)` here
-  // is that `env.DB` is not reachable from the TanStack Start server
-  // function context (#39). Once it is, replace this body with:
-  //
-  //   const owner = await findOwnerById(createDb(env.DB), ownerId);
-  //   return owner?.email ?? null;
-  //
-  // Static-reference both `createDb` and `findOwnerById` so the follow-up
-  // call site lands without an unused-import churn.
-  void createDb;
-  void findOwnerById;
-  return ownerId;
-}
 
 // ---------------------------------------------------------------------------
 // In-memory repository — duplicates `server/invitations.ts` to keep this

@@ -14,14 +14,14 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { PublicShell } from '../components/layout';
 
-export const Route = createFileRoute('/_public')({
-  component: PublicLayout,
-});
-
-function PublicLayout() {
+const PublicLayout = () => {
   return (
     <PublicShell>
       <Outlet />
     </PublicShell>
   );
-}
+};
+
+export const Route = createFileRoute('/_public')({
+  component: PublicLayout,
+});

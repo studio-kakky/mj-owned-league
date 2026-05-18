@@ -71,7 +71,7 @@ interface ServerRepos {
   players: PlayerRepository;
 }
 
-function makeRepos(): ServerRepos {
+const makeRepos = (): ServerRepos => {
   const store = getGroupServerStore();
   const rulesets = new MemoryRulesetRepository(store);
   const players = new MemoryPlayerRepository(store);
@@ -82,7 +82,7 @@ function makeRepos(): ServerRepos {
     rulesetService: new RulesetService(rulesets),
     playerService: new PlayerService(players),
   };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Input validators
@@ -162,6 +162,57 @@ export type RenamePlayerServerInput = z.infer<typeof renamePlayerInput>;
 export type PlayerIdServerInput = z.infer<typeof playerIdInput>;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const projectRuleset = (
+  ruleset: Ruleset,
+  groupDefaultRulesetId: string | null,
+): SettingsRulesetItem => {
+  return {
+    id: ruleset.id,
+    name: ruleset.name,
+    startingScore: ruleset.startingScore,
+    returnScore: ruleset.returnScore,
+    umaPattern: ruleset.umaPattern,
+    tobiEnabled: ruleset.tobiEnabled,
+    tobiPoint: ruleset.tobiPoint,
+    isDefault: groupDefaultRulesetId === ruleset.id,
+  };
+};
+
+/**
+ * Verifies that `groupId` exists and is owned by `ownerId`. Throws a generic
+ * `Error` otherwise — this is the security boundary for every mutation on
+ * this screen; we never surface a more granular reason because the only
+ * legitimate caller (the route's loader-fed UI) cannot land here with a
+ * mismatched id.
+ */
+const assertGroupOwnedBy = (
+  store: GroupServerStore,
+  groupId: string,
+  ownerId: string,
+): Promise<void> => {
+  const group = store.groups.get(groupId);
+  if (!group || group.ownerId !== ownerId) {
+    return Promise.reject(new Error('Group not found or not owned by caller.'));
+  }
+  return Promise.resolve();
+};
+
+/**
+ * Translates known domain errors into serialisable `Error` shapes so the
+ * client can render the message verbatim. Currently covers
+ * `TobiConfigurationError`; unknown causes bubble up untouched.
+ */
+const rethrowDomainError = (cause: unknown): never => {
+  if (cause instanceof TobiConfigurationError) {
+    throw new Error(cause.message);
+  }
+  throw cause;
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -175,7 +226,7 @@ export type PlayerIdServerInput = z.infer<typeof playerIdInput>;
  *   3. List the active Group's Rulesets and Players via the repository
  *      interfaces, then project each into the screen's shape.
  */
-export async function getSettingsHandler(input: SettingsInput): Promise<SettingsData> {
+export const getSettingsHandler = async (input: SettingsInput): Promise<SettingsData> => {
   seedDevDataIfEmpty(input.ownerId);
 
   const { store, rulesets, players } = makeRepos();
@@ -236,11 +287,11 @@ export async function getSettingsHandler(input: SettingsInput): Promise<Settings
     rulesets: rulesetItems,
     players: playerItems,
   };
-}
+};
 
-export async function createRulesetHandler(
+export const createRulesetHandler = async (
   input: CreateRulesetServerInput,
-): Promise<SettingsRulesetItem> {
+): Promise<SettingsRulesetItem> => {
   const { store, rulesetService } = makeRepos();
   await assertGroupOwnedBy(store, input.groupId, input.ownerId);
 
@@ -254,13 +305,13 @@ export async function createRulesetHandler(
     const group = store.groups.get(input.groupId);
     return projectRuleset(ruleset, group?.defaultRulesetId ?? null);
   } catch (cause) {
-    rethrowDomainError(cause);
+    throw rethrowDomainError(cause);
   }
-}
+};
 
-export async function updateRulesetHandler(
+export const updateRulesetHandler = async (
   input: UpdateRulesetServerInput,
-): Promise<SettingsRulesetItem | null> {
+): Promise<SettingsRulesetItem | null> => {
   const { store, rulesetService, rulesets } = makeRepos();
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return null;
@@ -272,13 +323,13 @@ export async function updateRulesetHandler(
     const group = store.groups.get(updated.groupId);
     return projectRuleset(updated, group?.defaultRulesetId ?? null);
   } catch (cause) {
-    rethrowDomainError(cause);
+    throw rethrowDomainError(cause);
   }
-}
+};
 
-export async function deleteRulesetHandler(
+export const deleteRulesetHandler = async (
   input: DeleteRulesetServerInput,
-): Promise<{ deleted: boolean }> {
+): Promise<{ deleted: boolean }> => {
   const { store, rulesetService, rulesets } = makeRepos();
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return { deleted: false };
@@ -296,11 +347,11 @@ export async function deleteRulesetHandler(
 
   const deleted = await rulesetService.delete(input.rulesetId);
   return { deleted };
-}
+};
 
-export async function setDefaultRulesetHandler(
+export const setDefaultRulesetHandler = async (
   input: SetDefaultRulesetServerInput,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean }> => {
   const { store, rulesets } = makeRepos();
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return { ok: false };
@@ -310,11 +361,11 @@ export async function setDefaultRulesetHandler(
   if (!group) return { ok: false };
   store.groups.set(group.id, { ...group, defaultRulesetId: existing.id });
   return { ok: true };
-}
+};
 
-export async function createPlayerHandler(
+export const createPlayerHandler = async (
   input: CreatePlayerServerInput,
-): Promise<SettingsPlayerItem> {
+): Promise<SettingsPlayerItem> => {
   const { store, playerService } = makeRepos();
   await assertGroupOwnedBy(store, input.groupId, input.ownerId);
 
@@ -327,11 +378,11 @@ export async function createPlayerHandler(
   const player = await playerService.create(newRow);
   // New players have no history by definition.
   return { id: player.id, name: player.name, isActive: player.isActive, hasHistory: false };
-}
+};
 
-export async function renamePlayerHandler(
+export const renamePlayerHandler = async (
   input: RenamePlayerServerInput,
-): Promise<SettingsPlayerItem | null> {
+): Promise<SettingsPlayerItem | null> => {
   const { store, playerService, players } = makeRepos();
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
@@ -341,11 +392,11 @@ export async function renamePlayerHandler(
   if (updated === null) return null;
   const hasHistory = await players.hasGameHistory(updated.id);
   return { id: updated.id, name: updated.name, isActive: updated.isActive, hasHistory };
-}
+};
 
-export async function deletePlayerHandler(
+export const deletePlayerHandler = async (
   input: PlayerIdServerInput,
-): Promise<{ deleted: boolean }> {
+): Promise<{ deleted: boolean }> => {
   const { store, playerService, players } = makeRepos();
   const existing = await players.findById(input.playerId);
   if (existing === null) return { deleted: false };
@@ -360,11 +411,11 @@ export async function deletePlayerHandler(
     }
     throw cause;
   }
-}
+};
 
-export async function deactivatePlayerHandler(
+export const deactivatePlayerHandler = async (
   input: PlayerIdServerInput,
-): Promise<SettingsPlayerItem | null> {
+): Promise<SettingsPlayerItem | null> => {
   const { store, playerService, players } = makeRepos();
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
@@ -374,11 +425,11 @@ export async function deactivatePlayerHandler(
   if (updated === null) return null;
   const hasHistory = await players.hasGameHistory(updated.id);
   return { id: updated.id, name: updated.name, isActive: updated.isActive, hasHistory };
-}
+};
 
-export async function reactivatePlayerHandler(
+export const reactivatePlayerHandler = async (
   input: PlayerIdServerInput,
-): Promise<SettingsPlayerItem | null> {
+): Promise<SettingsPlayerItem | null> => {
   const { store, playerService, players } = makeRepos();
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
@@ -388,7 +439,7 @@ export async function reactivatePlayerHandler(
   if (updated === null) return null;
   const hasHistory = await players.hasGameHistory(updated.id);
   return { id: updated.id, name: updated.name, isActive: updated.isActive, hasHistory };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server function wrappers
@@ -433,57 +484,6 @@ export const deactivatePlayerServerFn = createServerFn({ method: 'POST' })
 export const reactivatePlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(playerIdInput)
   .handler(({ data }) => reactivatePlayerHandler(data));
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function projectRuleset(
-  ruleset: Ruleset,
-  groupDefaultRulesetId: string | null,
-): SettingsRulesetItem {
-  return {
-    id: ruleset.id,
-    name: ruleset.name,
-    startingScore: ruleset.startingScore,
-    returnScore: ruleset.returnScore,
-    umaPattern: ruleset.umaPattern,
-    tobiEnabled: ruleset.tobiEnabled,
-    tobiPoint: ruleset.tobiPoint,
-    isDefault: groupDefaultRulesetId === ruleset.id,
-  };
-}
-
-/**
- * Verifies that `groupId` exists and is owned by `ownerId`. Throws a generic
- * `Error` otherwise — this is the security boundary for every mutation on
- * this screen; we never surface a more granular reason because the only
- * legitimate caller (the route's loader-fed UI) cannot land here with a
- * mismatched id.
- */
-function assertGroupOwnedBy(
-  store: GroupServerStore,
-  groupId: string,
-  ownerId: string,
-): Promise<void> {
-  const group = store.groups.get(groupId);
-  if (!group || group.ownerId !== ownerId) {
-    return Promise.reject(new Error('Group not found or not owned by caller.'));
-  }
-  return Promise.resolve();
-}
-
-/**
- * Translates known domain errors into serialisable `Error` shapes so the
- * client can render the message verbatim. Currently covers
- * `TobiConfigurationError`; unknown causes bubble up untouched.
- */
-function rethrowDomainError(cause: unknown): never {
-  if (cause instanceof TobiConfigurationError) {
-    throw new Error(cause.message);
-  }
-  throw cause;
-}
 
 // ---------------------------------------------------------------------------
 // In-memory repositories

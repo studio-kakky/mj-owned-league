@@ -54,28 +54,7 @@ const searchSchema = z.object({
   groupId: z.string().min(1).optional(),
 });
 
-export const Route = createFileRoute('/_owner/matches/new')({
-  validateSearch: searchSchema,
-  // We must thread `search` into the loader manually because TanStack
-  // Router does not feed validated search into `loader` by default — only
-  // `loaderDeps` does. Deps are also what makes the loader re-run when the
-  // query changes (e.g. the user picks a different League from a related
-  // dropdown elsewhere).
-  loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
-    const data = await getMatchCreateContextServerFn({
-      data: {
-        ownerId: context.ownerSession.ownerId,
-        leagueId: deps.leagueId,
-        groupId: deps.groupId,
-      },
-    });
-    return { data };
-  },
-  component: MatchCreatePage,
-});
-
-function MatchCreatePage() {
+const MatchCreatePage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
@@ -116,4 +95,25 @@ function MatchCreatePage() {
   }, [data.initialLeagueId, router]);
 
   return <MatchCreateScreen data={data} onSubmit={handleSubmit} onCancel={handleCancel} />;
-}
+};
+
+export const Route = createFileRoute('/_owner/matches/new')({
+  validateSearch: searchSchema,
+  // We must thread `search` into the loader manually because TanStack
+  // Router does not feed validated search into `loader` by default — only
+  // `loaderDeps` does. Deps are also what makes the loader re-run when the
+  // query changes (e.g. the user picks a different League from a related
+  // dropdown elsewhere).
+  loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
+  loader: async ({ context, deps }) => {
+    const data = await getMatchCreateContextServerFn({
+      data: {
+        ownerId: context.ownerSession.ownerId,
+        leagueId: deps.leagueId,
+        groupId: deps.groupId,
+      },
+    });
+    return { data };
+  },
+  component: MatchCreatePage,
+});

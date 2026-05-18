@@ -54,12 +54,12 @@ interface ServerDeps {
  * Exported clock / id deps are not surfaced here because production callers
  * want the real ones; the test seam is at the handler / service-test level.
  */
-function makeDeps(): ServerDeps {
+const makeDeps = (): ServerDeps => {
   const store = getGroupServerStore();
   const repo = new MemoryInvitationRepository(store);
   const service = new InvitationService(repo);
   return { service, repo };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Input schemas / types
@@ -96,6 +96,39 @@ export interface InvitationHandlerDeps {
 }
 
 // ---------------------------------------------------------------------------
+// Projection helper
+// ---------------------------------------------------------------------------
+
+const deriveUiStatus = (row: Invitation, nowMs: number): InvitationUiStatus => {
+  if (row.status === 'CONSUMED') return 'CONSUMED';
+  if (row.status === 'REVOKED') return 'REVOKED';
+  // status === 'PENDING' — distinguish expired vs still usable.
+  const expiresAtMs = Date.parse(row.expiresAt);
+  if (Number.isNaN(expiresAtMs) || expiresAtMs <= nowMs) return 'EXPIRED';
+  return 'PENDING';
+};
+
+/**
+ * Collapses the domain {@link Invitation} row into the screen's UI
+ * projection.
+ *
+ * The UI status is derived as:
+ *   - REVOKED  / CONSUMED  → pass through.
+ *   - PENDING & expired    → EXPIRED.
+ *   - PENDING & not expired→ PENDING.
+ */
+const projectToListItem = (row: Invitation, nowMs: number): InvitationListItem => {
+  return {
+    id: row.id,
+    memo: row.memo,
+    token: row.token,
+    status: deriveUiStatus(row, nowMs),
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -105,10 +138,10 @@ export interface InvitationHandlerDeps {
  * `expiresAt` into a single {@link InvitationUiStatus} value so the screen
  * never has to recompute "is this still usable?".
  */
-export async function listInvitationsHandler(
+export const listInvitationsHandler = async (
   input: ListInvitationsInput,
   deps: InvitationHandlerDeps = {},
-): Promise<ReadonlyArray<InvitationListItem>> {
+): Promise<ReadonlyArray<InvitationListItem>> => {
   // Materialise the dev seed on the first call per owner — same hook the
   // other server modules use. Idempotent thanks to `seededOwnerIds`.
   seedDevDataIfEmpty(input.ownerId);
@@ -125,17 +158,17 @@ export async function listInvitationsHandler(
     .slice()
     .sort((a, b) => (a.createdAt > b.createdAt ? -1 : a.createdAt < b.createdAt ? 1 : 0))
     .map((row) => projectToListItem(row, nowMs));
-}
+};
 
 /**
  * Issues a new invitation for the caller. Returns the freshly-created row
  * (UI projection) plus the raw token so the screen can build the share URL
  * without a round trip.
  */
-export async function issueInvitationHandler(
+export const issueInvitationHandler = async (
   input: IssueInvitationServerInput,
   deps: InvitationHandlerDeps = {},
-): Promise<{ token: string; invitation: InvitationListItem }> {
+): Promise<{ token: string; invitation: InvitationListItem }> => {
   // Don't seed on issue — listing seeds first, and seeding on a mutation
   // would conflate "user is new" with "user just issued a new invitation".
   // If the dashboard runs first the seed materialises before we get here;
@@ -165,17 +198,17 @@ export async function issueInvitationHandler(
     token: issued.token,
     invitation: projectToListItem(row, now().getTime()),
   };
-}
+};
 
 /**
  * Revokes a PENDING invitation. Throws (so the modal can surface the
  * message) when the invitation does not exist, belongs to another Owner,
  * or is not in a revocable state.
  */
-export async function revokeInvitationHandler(
+export const revokeInvitationHandler = async (
   input: RevokeInvitationServerInput,
   deps: InvitationHandlerDeps = {},
-): Promise<{ revoked: true; invitation: InvitationListItem }> {
+): Promise<{ revoked: true; invitation: InvitationListItem }> => {
   const { service, repo } = makeDeps();
   const now = deps.now ?? (() => new Date());
 
@@ -193,7 +226,7 @@ export async function revokeInvitationHandler(
     revoked: true,
     invitation: projectToListItem(revoked, now().getTime()),
   };
-}
+};
 
 // ---------------------------------------------------------------------------
 // Server functions
@@ -210,39 +243,6 @@ export const issueInvitationServerFn = createServerFn({ method: 'POST' })
 export const revokeInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(revokeInvitationInput)
   .handler(({ data }) => revokeInvitationHandler(data));
-
-// ---------------------------------------------------------------------------
-// Projection helper
-// ---------------------------------------------------------------------------
-
-/**
- * Collapses the domain {@link Invitation} row into the screen's UI
- * projection.
- *
- * The UI status is derived as:
- *   - REVOKED  / CONSUMED  → pass through.
- *   - PENDING & expired    → EXPIRED.
- *   - PENDING & not expired→ PENDING.
- */
-function projectToListItem(row: Invitation, nowMs: number): InvitationListItem {
-  return {
-    id: row.id,
-    memo: row.memo,
-    token: row.token,
-    status: deriveUiStatus(row, nowMs),
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-  };
-}
-
-function deriveUiStatus(row: Invitation, nowMs: number): InvitationUiStatus {
-  if (row.status === 'CONSUMED') return 'CONSUMED';
-  if (row.status === 'REVOKED') return 'REVOKED';
-  // status === 'PENDING' — distinguish expired vs still usable.
-  const expiresAtMs = Date.parse(row.expiresAt);
-  if (Number.isNaN(expiresAtMs) || expiresAtMs <= nowMs) return 'EXPIRED';
-  return 'PENDING';
-}
 
 // ---------------------------------------------------------------------------
 // In-memory repository

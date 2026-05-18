@@ -63,13 +63,13 @@ const FORMAT_LABELS: Readonly<Record<LeagueFormat, string>> = {
 
 const NO_RULESET_VALUE = '__none__';
 
-export function LeagueFormModal({
+export const LeagueFormModal = ({
   open,
   groups,
   rulesets,
   onClose,
   onSubmit,
-}: LeagueFormModalProps) {
+}: LeagueFormModalProps) => {
   const titleId = useId();
   const nameId = useId();
   const formatId = useId();
@@ -291,4 +291,4 @@ export function LeagueFormModal({
       </form>
     </Modal>
   );
-}
+};

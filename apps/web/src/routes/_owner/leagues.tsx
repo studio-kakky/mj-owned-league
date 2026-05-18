@@ -37,19 +37,7 @@ const searchSchema = z.object({
   groupId: z.string().min(1).optional(),
 });
 
-export const Route = createFileRoute('/_owner/leagues')({
-  validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
-    const data = await listLeaguesServerFn({
-      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
-    });
-    return { data };
-  },
-  component: LeaguesPage,
-});
-
-function LeaguesPage() {
+const LeaguesPage = () => {
   const router = useRouter();
   const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
@@ -75,4 +63,16 @@ function LeaguesPage() {
       onCreateLeague={handleCreate}
     />
   );
-}
+};
+
+export const Route = createFileRoute('/_owner/leagues')({
+  validateSearch: searchSchema,
+  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
+  loader: async ({ context, deps }) => {
+    const data = await listLeaguesServerFn({
+      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
+    });
+    return { data };
+  },
+  component: LeaguesPage,
+});

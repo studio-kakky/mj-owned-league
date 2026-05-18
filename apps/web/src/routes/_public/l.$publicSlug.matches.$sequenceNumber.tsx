@@ -12,6 +12,12 @@ import { createFileRoute } from '@tanstack/react-router';
 import { PublicMatchScreen, PublicNotFoundView } from '../../components/public';
 import { getPublicLeagueMatchServerFn } from '../../server/public';
 
+const PublicLeagueMatchPage = () => {
+  const { data } = Route.useLoaderData();
+  if (data === null) return <PublicNotFoundView />;
+  return <PublicMatchScreen data={data} />;
+};
+
 export const Route = createFileRoute('/_public/l/$publicSlug/matches/$sequenceNumber')({
   loader: async ({ params }) => {
     const parsed = Number.parseInt(params.sequenceNumber, 10);
@@ -27,9 +33,3 @@ export const Route = createFileRoute('/_public/l/$publicSlug/matches/$sequenceNu
   },
   component: PublicLeagueMatchPage,
 });
-
-function PublicLeagueMatchPage() {
-  const { data } = Route.useLoaderData();
-  if (data === null) return <PublicNotFoundView />;
-  return <PublicMatchScreen data={data} />;
-}

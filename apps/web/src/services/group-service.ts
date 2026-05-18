@@ -81,6 +81,15 @@ export interface GroupServiceDeps {
   generateId?: () => string;
 }
 
+/**
+ * Narrowing helper for the constructor overload. We test for one of the
+ * methods unique to `GroupRepository` (vs. the deps object's shape) so the
+ * check works even when both shapes carry no `groups` key.
+ */
+const isGroupRepository = (value: GroupRepository | GroupServiceDeps): value is GroupRepository => {
+  return typeof (value as GroupRepository).listByOwner === 'function';
+};
+
 export class GroupService {
   private readonly groups: GroupRepository;
   private readonly rulesets: RulesetRepository | undefined;
@@ -223,11 +232,3 @@ export class GroupService {
   }
 }
 
-/**
- * Narrowing helper for the constructor overload. We test for one of the
- * methods unique to `GroupRepository` (vs. the deps object's shape) so the
- * check works even when both shapes carry no `groups` key.
- */
-function isGroupRepository(value: GroupRepository | GroupServiceDeps): value is GroupRepository {
-  return typeof (value as GroupRepository).listByOwner === 'function';
-}
