@@ -7,7 +7,7 @@ export const RootDocument = ({ children }: Readonly<{ children: ReactNode }>) =>
       <head>
         <HeadContent />
       </head>
-      <body className="bg-zinc-950 text-zinc-100 antialiased">
+      <body className="bg-zinc-950 font-sans text-zinc-100 antialiased">
         {children}
         <Scripts />
       </body>

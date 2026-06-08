@@ -1,1 +1,10 @@
 @import 'tailwindcss';
+
+/* Design tokens from the Claude Design handoff bundle (S1 Login, Option B).
+   The mockups set Geist for body copy and JetBrains Mono for the JANROKU
+   wordmark / labels. Registering them as Tailwind theme fonts lets the rest
+   of the app reach for `font-sans` / `font-mono` and stay consistent. */
+@theme {
+  --font-sans: 'Geist', 'Helvetica Neue', Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, ui-monospace, monospace;
+}

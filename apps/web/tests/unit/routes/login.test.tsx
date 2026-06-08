@@ -49,13 +49,14 @@ describe('LoginPage (S1)', () => {
     signInSocial.mockReset();
   });
 
-  it('shows the JANROKU wordmark and invitation-only notice', () => {
+  it('shows the JANROKU wordmark, tagline and invitation-only notice', () => {
     render(<LoginPage />);
 
-    expect(screen.getByText('JANROKU')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'サインイン' })).toBeInTheDocument();
-    expect(screen.getByText(/JANROKU は招待制です/)).toBeInTheDocument();
-    expect(screen.getByText(/招待リンクからのみ可能です/)).toBeInTheDocument();
+    // The wordmark doubles as the page's single top-level heading.
+    expect(screen.getByRole('heading', { name: 'JANROKU' })).toBeInTheDocument();
+    expect(screen.getByText(/麻雀リーグの記録アプリ/)).toBeInTheDocument();
+    expect(screen.getByText('招待制です。')).toBeInTheDocument();
+    expect(screen.getByText(/招待リンクからアカウントを作成してください/)).toBeInTheDocument();
   });
 
   it('renders the Google sign-in button', () => {

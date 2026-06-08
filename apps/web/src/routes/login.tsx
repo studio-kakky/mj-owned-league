@@ -17,14 +17,18 @@
  *     `/login` as its own top-level path — that mirrors the file layout.
  *
  * Design source:
- *   The Claude Code design URL
- *   `api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Login.html`
- *   returns HTTP 405 (the bundle has expired). Visual style is therefore
- *   anchored to the existing shells (PR #36): zinc-950 background,
- *   uppercase tracked JANROKU wordmark, rounded full-pill buttons,
- *   `max-w-3xl` page container scaled down to a centered card column for
- *   the auth surface. Mobile 375pt is the design baseline (Tailwind's
- *   mobile-first defaults).
+ *   Claude Design handoff bundle, `Login.html` → `login.jsx` "Option B"
+ *   (the only artboard the canvas renders, i.e. the confirmed design).
+ *   It is a dark, hero-less mobile layout (375×812):
+ *     - background #0E0E0E, foreground #FAFAF8, Geist + JetBrains Mono
+ *     - left-aligned `JANROKU` mono wordmark (22px / 0.24em tracking)
+ *     - tagline, then a white 52px Google button (rounded 6px, official
+ *       4-colour G), an invitation-only dot-note, and a mono footer with
+ *       利用規約 / プライバシー links + © 2026.
+ *   The phone status bar and home indicator from the mockup are device
+ *   chrome, not app UI, so they are intentionally dropped. The column is
+ *   capped at `max-w-sm` and centred so the mobile proportions hold on
+ *   wider viewports.
  *
  * Sign-in flow:
  *   1. User taps "Google で続ける" → `signIn.social({ provider: 'google',
@@ -72,85 +76,77 @@ const LoginPage = () => {
   };
 
   return (
-    <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      {/* Top-left wordmark only — no nav. We deliberately do NOT link the
-          wordmark anywhere (there is no signed-out landing page to send the
-          user to). */}
-      <header className="px-6 pt-10">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-100">JANROKU</p>
-      </header>
+    <main className="flex min-h-screen justify-center bg-[#0E0E0E] font-sans text-[#FAFAF8]">
+      {/* Mobile column (375pt). Capped at max-w-sm and centred so the phone
+          proportions from the mockup hold on wider viewports. */}
+      <div className="flex w-full max-w-sm flex-col">
+        <section className="flex flex-1 flex-col justify-center px-8">
+          {/* JANROKU mono wordmark — the brand mark and the page's single
+              top-level heading. Left-aligned, JetBrains Mono, 0.24em track. */}
+          <h1 className="font-mono text-[22px] font-medium tracking-[0.24em] text-[#FAFAF8]">
+            JANROKU
+          </h1>
 
-      {/* Center column. `max-w-sm` keeps the card honest at 375pt mobile
-          width and stays comfortable up to ~tablet. */}
-      <section className="flex flex-1 flex-col items-center justify-center px-6 pb-16">
-        <div className="w-full max-w-sm space-y-8">
-          <div className="space-y-3 text-center">
-            <h1 className="text-2xl font-bold text-zinc-50">サインイン</h1>
-            <p className="text-sm text-zinc-400">
-              JANROKU は招待制です。
-              <br />
-              既にお持ちのアカウントでサインインしてください。
+          <p className="mt-4 max-w-[280px] text-sm leading-[1.6] text-[#999999]">
+            身内・コミュニティ単位で開く
+            <br />
+            麻雀リーグの記録アプリ。
+          </p>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isPending}
+            data-testid="login-google-button"
+            className="mt-10 inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-md bg-[#FAFAF8] text-[15px] font-medium text-[#111111] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <GoogleGlyph aria-hidden />
+            <span>{isPending ? 'サインイン中…' : 'Google で続ける'}</span>
+          </button>
+
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="login-error"
+              className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
+            >
+              {error}
+            </p>
+          ) : null}
+
+          {/* Invitation-only note — dot + text, no border (Option B). */}
+          <div className="mt-5 flex items-start gap-2.5 px-1">
+            <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[#FAFAF8]" />
+            <p className="text-xs leading-[1.55] text-[#AAAAAA]">
+              <span className="font-medium text-[#FAFAF8]">招待制です。</span>{' '}
+              既存のオーナーから受け取った招待リンクからアカウントを作成してください。
             </p>
           </div>
+        </section>
 
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              disabled={isPending}
-              data-testid="login-google-button"
-              className="flex w-full items-center justify-center gap-3 rounded-full border border-zinc-700 bg-zinc-100 px-5 py-3 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <GoogleGlyph aria-hidden />
-              <span>{isPending ? 'サインイン中…' : 'Google で続ける'}</span>
-            </button>
-
-            {error !== null ? (
-              <p
-                role="alert"
-                data-testid="login-error"
-                className="rounded-lg border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
-              >
-                {error}
-              </p>
-            ) : null}
-          </div>
-
-          <p className="text-center text-xs leading-relaxed text-zinc-500">
-            新規登録は招待リンクからのみ可能です。招待がない場合は既存 Owner
-            にお問い合わせください。
-          </p>
-        </div>
-      </section>
-
-      {/* Footer with legal links. The targets are intentional placeholders:
-          MVP scope does not include public Terms / Privacy pages, but the
-          links are required by the acceptance criteria so reviewers can
-          confirm the slot exists. Replace with real URLs when those pages
-          land. */}
-      <footer className="border-t border-zinc-900 bg-zinc-950">
-        <div className="mx-auto flex max-w-sm flex-col items-center gap-2 px-6 py-6 text-xs text-zinc-500">
-          <p>
-            続行することで、
+        {/* Footer — mono micro-type, legal links + copyright. The /terms and
+            /privacy targets are intentional placeholders until those public
+            pages land. */}
+        <footer className="flex items-center justify-between px-6 pt-6 pb-7 font-mono text-[10px] tracking-[0.08em] text-[#888888]">
+          <div className="flex gap-3.5">
             <a
               href="/terms"
-              className="text-zinc-300 underline-offset-2 hover:underline"
               data-testid="login-terms-link"
+              className="text-[#AAAAAA] no-underline hover:underline"
             >
               利用規約
             </a>
-            と
             <a
               href="/privacy"
-              className="text-zinc-300 underline-offset-2 hover:underline"
               data-testid="login-privacy-link"
+              className="text-[#AAAAAA] no-underline hover:underline"
             >
-              プライバシーポリシー
+              プライバシー
             </a>
-            に同意したものとみなされます。
-          </p>
-        </div>
-      </footer>
+          </div>
+          <span>© 2026</span>
+        </footer>
+      </div>
     </main>
   );
 };
