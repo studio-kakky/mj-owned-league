@@ -48,6 +48,32 @@ const OwnerLayout = () => {
   );
 };
 
+/**
+ * Dev-only preview owner. When there is no real Better Auth session and the
+ * build is a `vite dev` build (`import.meta.env.DEV`), we inject this fixed
+ * Owner instead of redirecting to `/login`, so the whole Owner section can be
+ * previewed without a working Google OAuth setup. The Owner-side server
+ * functions seed dummy data per `ownerId` (`groups-store.ts` §
+ * `seedDevDataIfEmpty`), so every screen renders populated.
+ *
+ * This is stripped from production builds — `import.meta.env.DEV` is `false`
+ * there, so the real auth gate below is the only path. To exercise the real
+ * "未認証 → /login" redirect while running `vite dev`, flip
+ * `DEV_OWNER_PREVIEW` to `false`.
+ */
+const DEV_OWNER_PREVIEW = true;
+
+const DEV_PREVIEW_OWNER_SESSION: OwnerSession = {
+  ownerId: 'dev-preview-owner',
+  displayName: 'プレビュー Owner',
+};
+
+const devPreviewBypass = (): { ownerSession: OwnerSession } | null => {
+  return import.meta.env.DEV && DEV_OWNER_PREVIEW
+    ? { ownerSession: DEV_PREVIEW_OWNER_SESSION }
+    : null;
+};
+
 export const Route = createFileRoute('/_owner')({
   beforeLoad: async () => {
     let session: Awaited<ReturnType<typeof authClient.getSession>> | null = null;
@@ -58,10 +84,14 @@ export const Route = createFileRoute('/_owner')({
       // user will see the login page rather than a partially-rendered
       // dashboard. The actual error stays visible in the browser console
       // via Better Auth's own logging.
+      const preview = devPreviewBypass();
+      if (preview) return preview;
       throw redirect({ to: '/login' });
     }
 
     if (!session?.data?.user) {
+      const preview = devPreviewBypass();
+      if (preview) return preview;
       throw redirect({ to: '/login' });
     }
 
