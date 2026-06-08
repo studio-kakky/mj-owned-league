@@ -69,48 +69,81 @@ export const GroupDeleteConfirmModal = ({
 
   return (
     <Modal open={open} onClose={onClose} labelledBy={titleId} testId="group-delete-modal">
-      <div className="space-y-5">
-        <div className="space-y-2">
-          <h2 id={titleId} className="text-base font-semibold text-zinc-100">
+      <div className="flex flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-[#1F1F1F] px-4 py-3.5">
+          <h2 id={titleId} className="flex-1 text-[15px] font-semibold text-[#FAFAF8]">
             グループを削除
           </h2>
-          <p className="text-sm text-zinc-300">
-            <span className="font-medium text-zinc-100">{groupName}</span>{' '}
-            を削除しようとしています。
-          </p>
+          <button
+            type="button"
+            aria-label="閉じる"
+            onClick={onClose}
+            disabled={isDeleting}
+            className="-mr-1 inline-flex items-center justify-center p-1 text-[#FAFAF8] disabled:opacity-60"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <title>閉じる</title>
+              <path
+                d="M5 5 L15 15 M15 5 L5 15"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        {hasHistory ? (
-          <p
-            data-testid="group-delete-history-notice"
-            className="rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
-          >
-            このグループには対局履歴があるため、物理削除できません。
-            <br />
-            運用方針が決まるまで現状維持としてください。グループ名の変更は可能です。
+        <div className="px-5 py-6">
+          <span className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#c87878]/[0.12] text-[#c87878]">
+            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <title>削除</title>
+              <path
+                d="M3 4.5 H13 M5.5 4.5 V3 H10.5 V4.5 M5 4.5 L5.5 13 H10.5 L11 4.5 M7 7 V11 M9 7 V11"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <p className="text-lg font-semibold text-[#FAFAF8]">
+            <span className="break-all">{groupName}</span> を削除しますか？
           </p>
-        ) : (
-          <p className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300">
-            このグループには対局履歴がありません。削除すると配下のプレイヤーやデフォルトのルールセットも一緒に削除されます。
-          </p>
-        )}
 
-        {error !== null ? (
-          <p
-            role="alert"
-            data-testid="group-delete-error"
-            className="rounded-lg border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
-          >
-            {error}
-          </p>
-        ) : null}
+          {hasHistory ? (
+            <p
+              data-testid="group-delete-history-notice"
+              className="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/40 px-4 py-3 text-xs leading-relaxed text-amber-100"
+            >
+              このグループには対局履歴があるため、物理削除できません。
+              <br />
+              運用方針が決まるまで現状維持としてください。グループ名の変更は可能です。
+            </p>
+          ) : (
+            <p className="mt-3 text-[13px] leading-relaxed text-[#888888]">
+              配下のプレイヤー・リーグ・デフォルトのルールセットも一緒に削除されます。
+              <br />
+              この操作は元に戻せません。
+            </p>
+          )}
 
-        <div className="flex items-center justify-end gap-2 pt-1">
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="group-delete-error"
+              className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
+            >
+              {error}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mb-4 flex shrink-0 justify-center gap-2 px-4">
           <button
             type="button"
             onClick={onClose}
             disabled={isDeleting}
-            className="rounded-full px-4 py-2 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full border border-[#262626] px-3.5 text-[13px] font-medium text-[#FAFAF8] transition-colors hover:border-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-60"
           >
             キャンセル
           </button>
@@ -119,9 +152,9 @@ export const GroupDeleteConfirmModal = ({
             onClick={handleConfirm}
             disabled={isDeleting || hasHistory}
             data-testid="group-delete-confirm"
-            className="rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full bg-[#c87878] px-[18px] text-[13px] font-semibold text-[#0E0E0E] transition-colors hover:bg-[#d88c8c] disabled:cursor-not-allowed disabled:bg-[#2a2a2a] disabled:text-[#666666]"
           >
-            {isDeleting ? '削除中…' : '削除する'}
+            {isDeleting ? '削除中…' : '削除'}
           </button>
         </div>
       </div>

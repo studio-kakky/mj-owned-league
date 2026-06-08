@@ -80,7 +80,7 @@ export const GroupFormModal = ({
   }, [open, initialName]);
 
   const isCreate = mode === 'create';
-  const title = isCreate ? 'グループを作成' : 'グループを編集';
+  const title = isCreate ? '新しいグループ' : 'グループを編集';
   const submitLabel = isCreate ? '作成' : '保存';
   const helperCopy = isCreate
     ? 'グループ作成と同時に既定のルールセット「標準ルール」も自動で作成されます。'
@@ -116,16 +116,36 @@ export const GroupFormModal = ({
       labelledBy={titleId}
       testId={isCreate ? 'group-create-modal' : 'group-edit-modal'}
     >
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="space-y-1">
-          <h2 id={titleId} className="text-base font-semibold text-zinc-100">
+      <form onSubmit={handleSubmit} className="flex flex-col">
+        {/* Header — title + close (design: FullScreenModal header). */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-[#1F1F1F] px-4 py-3.5">
+          <h2 id={titleId} className="flex-1 text-[15px] font-semibold text-[#FAFAF8]">
             {title}
           </h2>
-          <p className="text-xs text-zinc-500">{helperCopy}</p>
+          <button
+            type="button"
+            aria-label="閉じる"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="-mr-1 inline-flex items-center justify-center p-1 text-[#FAFAF8] disabled:opacity-60"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <title>閉じる</title>
+              <path
+                d="M5 5 L15 15 M15 5 L5 15"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        <div className="space-y-2">
-          <label htmlFor={inputId} className="block text-xs font-medium text-zinc-300">
+        <div className="px-5 py-5">
+          <p className="mb-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[#888888]">
+            グループ名
+          </p>
+          <label htmlFor={inputId} className="sr-only">
             グループ名
           </label>
           <input
@@ -137,27 +157,29 @@ export const GroupFormModal = ({
             maxLength={80}
             onChange={(event) => setName(event.target.value)}
             data-testid="group-form-name-input"
-            className="block w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
-            placeholder="例: 金曜定例会"
+            className="block h-10 w-full rounded-md border border-[#262626] bg-[#181818] px-3 text-sm text-[#FAFAF8] placeholder:text-[#666666] focus:border-[#3a3a3a] focus:outline-none"
+            placeholder="例：金曜定例会"
           />
+          <p className="mt-2 text-[11.5px] leading-relaxed text-[#666666]">{helperCopy}</p>
+
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="group-form-error"
+              className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
+            >
+              {error}
+            </p>
+          ) : null}
         </div>
 
-        {error !== null ? (
-          <p
-            role="alert"
-            data-testid="group-form-error"
-            className="rounded-lg border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2 pt-1">
+        {/* Footer — centred pill buttons (design). */}
+        <div className="mb-4 flex shrink-0 justify-center gap-2 px-4">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-full px-4 py-2 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full border border-[#262626] px-3.5 text-[13px] font-medium text-[#FAFAF8] transition-colors hover:border-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-60"
           >
             キャンセル
           </button>
@@ -165,7 +187,7 @@ export const GroupFormModal = ({
             type="submit"
             disabled={isSubmitting}
             data-testid="group-form-submit"
-            className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full bg-[#FAFAF8] px-[18px] text-[13px] font-semibold text-[#0E0E0E] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-[#2a2a2a] disabled:text-[#666666]"
           >
             {isSubmitting ? '送信中…' : submitLabel}
           </button>

@@ -8,12 +8,22 @@
  * actions go through a server function, a Drizzle repo on the Worker, or
  * an in-memory dev fixture.
  *
- * The visual language mirrors the existing surfaces (Login, OwnerShell):
- *   - zinc-950 background, zinc-800/900 borders, emerald-500 accent.
+ * Visual language (design: `groups.jsx`):
+ *   - Dark tokens (#0E0E0E / #FAFAF8 / #888 / #666 / #1F1F1F), full-bleed
+ *     rows with hairline separators, Geist + JetBrains Mono.
  *   - Mobile 375pt baseline; the list is a single column.
- *   - The "+" affordance lives in the section header (matches the
- *     `04-screens.md` § S5 description: "デザイン上は S4 一覧画面の右上
- *     『+』から開くモーダル").
+ *   - A dashed "新しいグループを作成" button sits above the list; each card has
+ *     an avatar (name initial) + pencil/trash icon actions. Trash is disabled
+ *     for Groups with history (our deletion rule), mirroring the design's
+ *     disabled-trash affordance.
+ *   - The screen breaks out of the shell's horizontal padding (`-mx-4`) so the
+ *     row separators span the full width.
+ *
+ * Data note: the design card shows メンバー数・説明・ACTIVE バッジ, but the
+ * S4 projection (`GroupListItem`) carries none of those — there is no group
+ * description, no membership concept, and the active group is not known on
+ * this screen. We bind the metrics we actually have (player / league counts,
+ * last-played date) and omit the rest.
  *
  * Empty / loading states:
  *   - `groups` is the source of truth and may be empty; we render an empty
@@ -26,6 +36,32 @@ import { useState } from 'react';
 import { GroupDeleteConfirmModal } from './GroupDeleteConfirmModal';
 import { GroupFormModal } from './GroupFormModal';
 import type { GroupListItem } from './types';
+
+const PencilIcon = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <title>編集</title>
+    <path
+      d="M11.5 2.5 L13.5 4.5 L5.5 12.5 L3 13 L3.5 10.5 Z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <title>削除</title>
+    <path
+      d="M3 4.5 H13 M5.5 4.5 V3 H10.5 V4.5 M5 4.5 L5.5 13 H10.5 L11 4.5 M7 7 V11 M9 7 V11"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 export interface GroupsScreenProps {
   groups: ReadonlyArray<GroupListItem>;
@@ -64,75 +100,89 @@ export const GroupsScreen = ({
   const closeModal = () => setModal({ kind: 'none' });
 
   return (
-    <section className="space-y-5" data-testid="groups-screen">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Groups</p>
-          <h1 className="text-2xl font-bold text-zinc-50">グループ</h1>
-          <p className="mt-1 text-sm text-zinc-400">参加メンバーやリーグを束ねる最小単位です。</p>
-        </div>
+    <section className="-mx-4 -mt-4 font-sans" data-testid="groups-screen">
+      <div className="px-5 pt-5 pb-3.5">
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-[#FAFAF8]">グループ</h1>
+        <p className="mt-1 text-xs leading-relaxed text-[#666666]">
+          使用するグループを切り替え・作成・編集できます
+        </p>
+      </div>
+
+      <div className="px-5">
         <button
           type="button"
           onClick={() => setModal({ kind: 'create' })}
           data-testid="groups-create-trigger"
           aria-label="グループを作成"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-base font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#262626] text-[13px] font-medium text-[#888888] transition-colors hover:border-[#3a3a3a] hover:text-[#FAFAF8]"
         >
-          ＋
+          <span aria-hidden="true" className="-mt-0.5 text-base leading-none">
+            +
+          </span>
+          新しいグループを作成
         </button>
-      </header>
+      </div>
 
       {groups.length === 0 ? (
-        <div
-          data-testid="groups-empty-state"
-          className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 p-6 text-center text-sm text-zinc-400"
-        >
-          <p className="font-medium text-zinc-200">グループはまだありません</p>
-          <p className="mt-1 text-xs text-zinc-500">
-            「＋」ボタンから最初のグループを作成してください。作成と同時に標準ルールのルールセットが自動で用意されます。
-          </p>
+        <div className="px-5">
+          <div
+            data-testid="groups-empty-state"
+            className="mt-3.5 rounded-lg border border-dashed border-[#262626] p-6 text-center text-sm text-[#888888]"
+          >
+            <p className="font-medium text-[#FAFAF8]">グループはまだありません</p>
+            <p className="mt-1 text-xs leading-relaxed text-[#666666]">
+              上のボタンから最初のグループを作成してください。作成と同時に標準ルールのルールセットが自動で用意されます。
+            </p>
+          </div>
         </div>
       ) : (
-        <ul className="space-y-3" data-testid="groups-list">
+        <ul className="mt-3.5" data-testid="groups-list">
           {groups.map((group) => (
             <li
               key={group.id}
               data-testid={`groups-list-item-${group.id}`}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4"
+              className="flex items-center gap-3 border-t border-[#1F1F1F] px-5 py-3.5 [&:last-child]:border-b"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-zinc-100">{group.name}</p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    プレイヤー {group.playerCount} 人 / リーグ {group.leagueCount} / 最終対局{' '}
-                    {group.lastPlayedAt === null ? '未対局' : formatDate(group.lastPlayedAt)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setModal({ kind: 'edit', group })}
-                    data-testid={`groups-edit-trigger-${group.id}`}
-                    aria-label={`${group.name} を編集`}
-                    className="rounded-full px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-                  >
-                    編集
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setModal({ kind: 'delete', group })}
-                    data-testid={`groups-delete-trigger-${group.id}`}
-                    aria-label={`${group.name} を削除`}
-                    className="rounded-full px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-950/40 hover:text-rose-200"
-                  >
-                    削除
-                  </button>
-                </div>
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#262626] bg-[#1F1F1F] text-base font-semibold text-[#888888]">
+                {group.name.trim().charAt(0) || '?'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="mb-0.5 truncate text-[15px] font-medium text-[#FAFAF8]">
+                  {group.name}
+                </p>
+                <p className="truncate text-xs text-[#666666]">
+                  プレイヤー {group.playerCount} 人 · リーグ {group.leagueCount} · 最終対局{' '}
+                  {group.lastPlayedAt === null ? '未対局' : formatDate(group.lastPlayedAt)}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setModal({ kind: 'edit', group })}
+                data-testid={`groups-edit-trigger-${group.id}`}
+                aria-label={`${group.name} を編集`}
+                className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-[#262626] text-[#888888] transition-colors hover:text-[#FAFAF8]"
+              >
+                <PencilIcon />
+              </button>
+              {/* Always clickable: history-bearing groups still open the modal,
+                  which explains why deletion is blocked (a missing button would
+                  read as a bug). The disabled state lives on the modal's confirm
+                  button, not here. */}
+              <button
+                type="button"
+                onClick={() => setModal({ kind: 'delete', group })}
+                data-testid={`groups-delete-trigger-${group.id}`}
+                aria-label={`${group.name} を削除`}
+                className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-[#262626] text-[#c87878] transition-colors hover:text-[#d88c8c]"
+              >
+                <TrashIcon />
+              </button>
             </li>
           ))}
         </ul>
       )}
+
+      <div className="h-6" />
 
       <GroupFormModal
         open={modal.kind === 'create'}

@@ -56,22 +56,26 @@ export const Modal = ({ open, onClose, labelledBy, testId, children }: ModalProp
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid={testId}>
+    <div className="fixed inset-0 z-50 font-sans" data-testid={testId}>
       <button
         type="button"
         aria-label="閉じる"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 bg-black/55"
       />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={labelledBy}
-        tabIndex={-1}
-        className="relative w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl"
-      >
-        {children}
+      {/* Top-anchored full-width sheet (design: `groups.jsx` FullScreenModal).
+          Centred within the mobile column so it tracks the app's max width. */}
+      <div className="absolute inset-x-0 top-0 mx-auto flex max-h-full max-w-3xl flex-col">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labelledBy}
+          tabIndex={-1}
+          className="flex max-h-full flex-col overflow-hidden bg-[#141414]"
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
