@@ -18,6 +18,7 @@
  */
 
 import { type ReactNode, useState } from 'react';
+import { signOut } from '../../auth/client';
 import { GroupSwitcherSheet } from './GroupSwitcherSheet';
 import { OwnerBottomNav } from './OwnerBottomNav';
 import { OwnerHeader } from './OwnerHeader';
@@ -49,14 +50,16 @@ export const OwnerShell = ({
   const [isSheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-[#0E0E0E] font-sans text-[#FAFAF8]">
       <OwnerHeader
         session={session}
         activeGroup={activeGroup}
         onOpenGroupSwitcher={() => setSheetOpen(true)}
       />
 
-      {/* Reserve space for the fixed bottom nav (h-14 + safe-area). */}
+      {/* Reserve space for the fixed bottom nav. Horizontal padding is owned
+          here for legacy screens (S3); the redesigned full-bleed screens
+          (S4 一覧 / S6 グループホーム) break out with `-mx-4`. */}
       <main className="mx-auto max-w-3xl px-4 pb-24 pt-4">{children}</main>
 
       <OwnerBottomNav />
@@ -67,6 +70,19 @@ export const OwnerShell = ({
         groups={groups}
         activeGroupId={activeGroup?.id ?? null}
         onSelect={onSelectGroup}
+        session={session}
+        onLogout={
+          session
+            ? () => {
+                // Fire-and-forget: clear the Better Auth session, then hard
+                // navigate to the login screen. A full reload (rather than a
+                // router navigation) guarantees no stale Owner state lingers.
+                void signOut().finally(() => {
+                  if (typeof window !== 'undefined') window.location.assign('/login');
+                });
+              }
+            : undefined
+        }
       />
     </div>
   );

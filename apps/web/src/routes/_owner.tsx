@@ -69,7 +69,10 @@ const DEV_PREVIEW_OWNER_SESSION: OwnerSession = {
 };
 
 const devPreviewBypass = (): { ownerSession: OwnerSession } | null => {
-  return import.meta.env.DEV && DEV_OWNER_PREVIEW
+  // `MODE !== 'test'` keeps the bypass out of vitest so the auth-gate tests
+  // still exercise the real "未認証 → /login" redirect; it stays active under
+  // `vite dev` (MODE 'development').
+  return import.meta.env.DEV && import.meta.env.MODE !== 'test' && DEV_OWNER_PREVIEW
     ? { ownerSession: DEV_PREVIEW_OWNER_SESSION }
     : null;
 };
