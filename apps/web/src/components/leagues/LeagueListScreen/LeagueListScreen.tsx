@@ -58,6 +58,45 @@ const FORMAT_LABELS: Readonly<Record<LeagueFormat, string>> = {
   '3P_TONPU': '3人 東風',
 };
 
+const STATUS_LABELS: Readonly<Record<LeagueListItem['status'], string>> = {
+  ACTIVE: '進行中',
+  ENDED: '終了',
+};
+
+/** Right chevron + status badge — design `LeagueList.html`. */
+const ChevronRight = () => (
+  <svg
+    width={14}
+    height={14}
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="shrink-0 text-[#888888]"
+  >
+    <title>開く</title>
+    <path d="M5 3 L9 7 L5 11" />
+  </svg>
+);
+
+const StatusBadge = ({ status }: { status: LeagueListItem['status'] }) => {
+  const isActive = status === 'ACTIVE';
+  return (
+    <span
+      className={`shrink-0 rounded-[3px] border px-1.5 py-px font-mono text-[10px] tracking-[0.04em] ${
+        isActive ? 'border-[#3a3a3a] text-[#FAFAF8]' : 'border-[#1F1F1F] text-[#666666]'
+      }`}
+    >
+      {STATUS_LABELS[status]}
+    </span>
+  );
+};
+
+const MetaDot = () => <span className="text-[#3a3a3a]">·</span>;
+
 export const LeagueListScreen = ({
   leagues,
   groups,
@@ -72,60 +111,80 @@ export const LeagueListScreen = ({
     return leagues.filter((league) => league.status === filter);
   }, [leagues, filter]);
 
+  const counts = useMemo(
+    () => ({
+      ALL: leagues.length,
+      ACTIVE: leagues.filter((l) => l.status === 'ACTIVE').length,
+      ENDED: leagues.filter((l) => l.status === 'ENDED').length,
+    }),
+    [leagues],
+  );
+
   const hasGroups = groups.length > 0;
 
   return (
-    <section className="space-y-5" data-testid="leagues-screen">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Leagues</p>
-          <h1 className="text-2xl font-bold text-zinc-50">リーグ</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            シーズン単位で対局を束ねる入れ物です。順位表や公開 URL はここから辿れます。
-          </p>
-        </div>
+    <section className="-mx-4 -mt-4 font-sans" data-testid="leagues-screen">
+      <div className="flex items-baseline justify-between px-5 pt-5 pb-3.5">
+        <h1 className="text-[22px] font-semibold tracking-[-0.01em] text-[#FAFAF8]">リーグ</h1>
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
           disabled={!hasGroups}
           data-testid="leagues-create-trigger"
           aria-label="リーグを作成"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-base font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex shrink-0 items-center gap-1 rounded-full border border-[#2d2d2d] px-3 py-1.5 text-xs font-medium text-[#FAFAF8] transition-colors hover:border-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          ＋
+          <span aria-hidden="true" className="-mt-px text-sm leading-none">
+            +
+          </span>
+          <span>新規</span>
         </button>
-      </header>
+      </div>
 
-      <FilterPills active={filter} onChange={setFilter} />
+      <FilterPills active={filter} counts={counts} onChange={setFilter} />
 
       {filtered.length === 0 ? (
-        <EmptyState filter={filter} hasAnyLeague={leagues.length > 0} hasGroups={hasGroups} />
+        <div className="px-5 pt-3.5">
+          <EmptyState filter={filter} hasAnyLeague={leagues.length > 0} hasGroups={hasGroups} />
+        </div>
       ) : (
-        <ul className="space-y-3" data-testid="leagues-list">
+        <ul className="mt-3.5" data-testid="leagues-list">
           {filtered.map((league) => (
             <li key={league.id} data-testid={`leagues-list-item-${league.id}`}>
               <Link
                 to="/leagues/$leagueId"
                 params={{ leagueId: league.id }}
-                className="block rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 transition-colors hover:border-emerald-500/70"
+                className="flex items-center justify-between gap-3 border-t border-[#1F1F1F] px-5 py-4 transition-colors [&:last-child]:border-b hover:bg-[#141414]"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-zinc-100">{league.name}</p>
-                    <p className="mt-1 truncate text-xs text-zinc-500">
-                      {league.groupName} / {FORMAT_LABELS[league.format]} / マッチ{' '}
-                      {league.matchCount} 件 / 対局 {league.gameCount} 件
-                    </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[15px] font-medium text-[#FAFAF8]">
+                      {league.name}
+                    </span>
+                    <StatusBadge status={league.status} />
                   </div>
-                  <span className="shrink-0 text-xs text-zinc-500">
-                    {league.lastPlayedAt === null ? '未対局' : formatDate(league.lastPlayedAt)}
-                  </span>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[11.5px] text-[#666666]">
+                    <span>{league.groupName}</span>
+                    <MetaDot />
+                    <span>{FORMAT_LABELS[league.format]}</span>
+                    <MetaDot />
+                    <span>{league.playerCount}人</span>
+                    <MetaDot />
+                    <span>{league.matchCount} マッチ</span>
+                    <MetaDot />
+                    <span>
+                      {league.lastPlayedAt === null ? '未対局' : formatDate(league.lastPlayedAt)}
+                    </span>
+                  </div>
                 </div>
+                <ChevronRight />
               </Link>
             </li>
           ))}
         </ul>
       )}
+
+      <div className="h-4" />
 
       <LeagueFormModal
         open={createOpen}
