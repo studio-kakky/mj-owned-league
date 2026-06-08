@@ -182,6 +182,45 @@ const defaultResolveIssuerEmail = async (ownerId: string): Promise<string | null
 };
 
 // ---------------------------------------------------------------------------
+// Dev-only preview fixture
+// ---------------------------------------------------------------------------
+
+/**
+ * Fixed token that materialises a PENDING invitation for design / QA preview.
+ * Open `/invitations/accept/dev` in `vite dev` to see the valid (招待元情報 +
+ * 「Google で承諾」) state without first logging in as an Owner and issuing a
+ * real invite.
+ */
+const DEV_PREVIEW_TOKEN = 'dev';
+
+/**
+ * Materialise the single dev preview invitation if it is missing. This is the
+ * one sanctioned exception to "verify never seeds" (see the handler docstring
+ * below): it is gated on `import.meta.env.DEV` *and* on a hard-coded constant
+ * token — never on caller input — so it cannot be abused to seed fixtures for
+ * an attacker-controlled `ownerId`. It is a no-op (and unreachable) in
+ * production builds.
+ */
+const ensureDevPreviewInvitation = (): void => {
+  const store = getGroupServerStore();
+  if (store.invitations.has('dev-preview-invitation')) return;
+  store.invitations.set('dev-preview-invitation', {
+    id: 'dev-preview-invitation',
+    // `defaultResolveIssuerEmail` surfaces the ownerId as the issuer email,
+    // so use an email-shaped value to make the preview look realistic.
+    issuedByOwnerId: 'owner@example.com',
+    memo: 'デザイン確認用のプレビュー招待',
+    token: DEV_PREVIEW_TOKEN,
+    status: 'PENDING',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    consumedByUserId: null,
+    consumedAt: null,
+    revokedAt: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -190,16 +229,21 @@ const defaultResolveIssuerEmail = async (ownerId: string): Promise<string | null
  * `invalid` shape so the screen can render without any further server
  * round-trips.
  *
- * Note: this handler intentionally does **not** seed the dev store. The
- * accept URL is public — seeding off a guessed token would silently
- * materialise fixtures for an attacker-controlled `ownerId`. The flow is
- * always: an Owner first lists/issues an invitation (which seeds), then the
- * invitee opens the URL.
+ * Note: this handler intentionally does **not** seed the dev store off
+ * caller input. The accept URL is public — seeding off a guessed token would
+ * silently materialise fixtures for an attacker-controlled `ownerId`. The
+ * flow is always: an Owner first lists/issues an invitation (which seeds),
+ * then the invitee opens the URL. The sole exception is the dev-only,
+ * fixed-token preview fixture (`ensureDevPreviewInvitation`).
  */
 export const verifyInvitationHandler = async (
   input: VerifyInvitationInput,
   deps: InvitationAcceptHandlerDeps = {},
 ): Promise<VerifyInvitationResult> => {
+  if (import.meta.env.DEV && input.token === DEV_PREVIEW_TOKEN) {
+    ensureDevPreviewInvitation();
+  }
+
   const { service } = makeDeps();
   const resolveIssuerEmail = deps.resolveIssuerEmail ?? defaultResolveIssuerEmail;
 

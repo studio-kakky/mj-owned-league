@@ -20,24 +20,27 @@ const INVALID_DESCRIPTION: Record<InvitationInvalidReason, string> = {
 export const InvalidBody = ({ reason }: { reason: InvitationInvalidReason }) => {
   return (
     <>
-      <div className="space-y-3 text-center">
-        <h1 className="text-2xl font-bold text-zinc-50">招待を受け入れられません</h1>
-      </div>
+      {/* Invalid state is not in the S2 design canvas (which only mocks the
+          valid path); it reuses the same dark tokens so the surface stays
+          coherent with `ValidBody`. */}
+      <p className="mt-7 text-[22px] font-medium leading-[1.35] tracking-[-0.01em] text-[#FAFAF8]">
+        招待を受け入れられません
+      </p>
 
       <div
         data-testid={`invite-accept-invalid-${reason}`}
         role="alert"
-        className="space-y-2 rounded-xl border border-rose-900/60 bg-rose-950/30 p-4"
+        className="mt-6 space-y-2 rounded-md border border-rose-900/60 bg-rose-950/30 p-4"
       >
         <p className="text-sm font-semibold text-rose-200">{INVALID_TITLE[reason]}</p>
-        <p className="text-xs text-rose-300/80">{INVALID_DESCRIPTION[reason]}</p>
+        <p className="text-xs leading-[1.55] text-rose-300/80">{INVALID_DESCRIPTION[reason]}</p>
       </div>
 
-      <p className="text-center text-xs leading-relaxed text-zinc-500">
+      <p className="mt-5 px-1 text-xs leading-[1.55] text-[#888888]">
         既に Owner アカウントをお持ちの場合は{' '}
         <a
           href="/login"
-          className="text-zinc-300 underline-offset-2 hover:underline"
+          className="text-[#AAAAAA] underline-offset-2 hover:underline"
           data-testid="invite-accept-login-link"
         >
           サインイン
