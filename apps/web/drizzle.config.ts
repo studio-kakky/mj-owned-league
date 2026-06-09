@@ -8,8 +8,8 @@
  *
  *   2. `pnpm --filter web drizzle:apply:local`
  *      → applies the migrations to the local Miniflare-backed D1 (under
- *        `.wrangler/state`). This is what you want during development and
- *        when running the round-trip smoke test via `worker:dev`.
+ *        `.wrangler/state`). This is what you want during development so the
+ *        local D1 the `vite dev` Worker reads has the latest schema.
  *
  *   3. `pnpm --filter web drizzle:apply:remote`
  *      → applies the migrations to the real D1 database. This will only work

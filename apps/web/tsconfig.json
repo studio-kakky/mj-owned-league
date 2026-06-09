@@ -22,11 +22,11 @@
   },
   "include": [
     "src",
-    "worker",
     "tests/unit",
     "vite.config.ts",
     "vitest.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "worker-configuration.d.ts"
   ],
   "exclude": ["node_modules", ".output", ".tanstack", ".wrangler", "tests/e2e"]
 }

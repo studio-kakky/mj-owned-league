@@ -12,9 +12,9 @@
  * added to `schema.ts`, the Zod schemas pick it up automatically.
  *
  * Why split this out from `schema.ts`?
- *   - `schema.ts` is imported by the Workers runtime (`worker/index.ts`); we
- *     don't want to drag `drizzle-zod` and `zod` into the Worker bundle just
- *     for table definitions.
+ *   - `schema.ts` is imported by the Workers runtime (via the auth server
+ *     route and Drizzle repositories); we don't want to drag `drizzle-zod`
+ *     and `zod` into the Worker bundle just for table definitions.
  *   - Request validation is a separate concern from table definition itself.
  *
  * Cross-record / cross-table invariants (e.g. "if `tobiEnabled` is true then

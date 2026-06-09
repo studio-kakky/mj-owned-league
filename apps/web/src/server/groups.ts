@@ -18,17 +18,17 @@
  *     the screen's shape.
  *
  * What is still TODO (out of scope for Issue #15):
- *   The TanStack Start ↔ Workers integration that would expose `env.DB` to a
- *   server function is not yet wired (see `worker/index.ts`: "The full
- *   TanStack Start ↔ Workers integration ... is tracked as a follow-up
- *   issue"). Until that lands, this module backs its `GroupService` /
- *   `GameService` instances with an in-process `Map` (`makeMemoryRepos`).
+ *   The TanStack Start ↔ Workers integration now exposes `env.DB` to the
+ *   server side (`src/routes/api/auth/$.ts` reads the binding via
+ *   `cloudflare:workers`), but this module has not yet been switched over:
+ *   it still backs its `GroupService` / `GameService` instances with an
+ *   in-process `Map` (`makeMemoryRepos`).
  *   Crucially, the data lives on the *server* side of the RPC boundary:
  *     - The state survives navigation, but not a Node process restart.
  *     - The client cannot mutate it without going through a server function.
- *   When the D1 binding becomes reachable from a server function, the only
- *   change required is swapping `makeMemoryRepos()` for a factory that
- *   returns `Drizzle*Repository` instances backed by `env.DB`.
+ *   The only change required is swapping `makeMemoryRepos()` for a factory
+ *   that returns `Drizzle*Repository` instances backed by the now-reachable
+ *   `env.DB` (imported from `cloudflare:workers`).
  *
  * Owner identity:
  *   D1 access is required to validate a Better Auth session server-side, so

@@ -1,6 +1,10 @@
 name = "janroku-web"
-main = "worker/index.ts"
+# The TanStack Start server entry serves SSR + every server route (including
+# `/api/auth/*`). `@cloudflare/vite-plugin` wires this entry into both `vite dev`
+# and `wrangler deploy`, so there is no hand-written Worker entry anymore.
+main = "@tanstack/react-start/server-entry"
 compatibility_date = "2026-05-01"
+# `nodejs_compat` is required by Better Auth (it relies on Node built-ins).
 compatibility_flags = ["nodejs_compat"]
 
 # ---------------------------------------------------------------------------
