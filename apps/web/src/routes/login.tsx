@@ -46,10 +46,11 @@
  * Google credentials and can reproduce the failure modes.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { signIn } from '../auth/client';
 import { GoogleGlyph } from '../components/auth';
+import { getSessionServerFn } from '../server/session';
 
 const LoginPage = () => {
   const [isPending, setPending] = useState(false);
@@ -152,5 +153,29 @@ const LoginPage = () => {
 };
 
 export const Route = createFileRoute('/login')({
+  // Bounce already-authenticated owners straight to the home dashboard (S3).
+  // This mirrors `_owner.tsx`'s gate, inverted: `_owner` redirects *un*authed
+  // users to `/login`; here we redirect *authed* users away from `/login` so
+  // landing on the sign-in page with a live session never strands them. It
+  // also covers the post-OAuth return path — even if Better Auth ever lands
+  // the callback back on `/login`, the live session forwards them to `/`.
+  //
+  // Failure mode: if the session probe itself throws (network / Worker
+  // offline) we swallow it and render the login page — the user is here to
+  // sign in anyway, so showing the form is the safe default.
+  beforeLoad: async () => {
+    let user: Awaited<ReturnType<typeof getSessionServerFn>> = null;
+    try {
+      user = await getSessionServerFn();
+    } catch {
+      // Probe failed (network / Worker offline). Stay on the login page —
+      // the user is here to sign in anyway. Do not redirect.
+      return;
+    }
+
+    if (user) {
+      throw redirect({ to: '/' });
+    }
+  },
   component: LoginPage,
 });
