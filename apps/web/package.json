@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
+    "preview": "vite preview",
+    "deploy": "vite build && wrangler deploy",
+    "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write .",
@@ -14,8 +16,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "worker:dev": "wrangler dev --local --persist-to .wrangler/state",
-    "worker:types": "wrangler types",
     "drizzle:generate": "drizzle-kit generate",
     "drizzle:apply:local": "wrangler d1 migrations apply janroku-local --local --persist-to .wrangler/state",
     "drizzle:apply:remote": "wrangler d1 migrations apply janroku-local --remote",
@@ -32,7 +32,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
-    "@cloudflare/workers-types": "4.20260515.1",
+    "@cloudflare/vite-plugin": "^1.40.0",
+    "@cloudflare/workers-types": "4.20260609.1",
     "@playwright/test": "1.60.0",
     "@tailwindcss/vite": "4.3.0",
     "@tanstack/router-plugin": "1.167.35",
@@ -49,6 +50,6 @@
     "typescript": "6.0.3",
     "vite": "8.0.13",
     "vitest": "4.1.6",
-    "wrangler": "4.91.0"
+    "wrangler": "4.98.0"
   }
 }

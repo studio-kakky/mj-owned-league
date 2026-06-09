@@ -117,11 +117,11 @@ export const createAuth = (env: AuthEnv) => {
     // "no change" — acceptable for a per-login event.
     //
     // Why we don't do this from the client (e.g. in `_owner.tsx` `beforeLoad`):
-    //   - The browser cannot reach D1; it would need a server function, and
-    //     the TanStack Start ↔ Workers integration that would let a server
-    //     function see `env.DB` is not yet wired (see `worker/index.ts`).
-    //   - Better Auth's hooks already run in the Worker isolate, so this is
-    //     the cheapest correct place.
+    //   - The browser cannot reach D1; it would need a server round trip.
+    //   - Better Auth's hooks already run in the Worker isolate (this handler
+    //     is mounted from `src/routes/api/auth/$.ts`, which reads the D1
+    //     binding via `cloudflare:workers`), so this is the cheapest correct
+    //     place to materialise the `owners` row.
     databaseHooks: {
       user: {
         create: {

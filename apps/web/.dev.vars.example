@@ -1,5 +1,5 @@
 # =============================================================================
-# Local Cloudflare Worker secrets (used by `wrangler dev --local`)
+# Local Worker secrets (read by `@cloudflare/vite-plugin` during `vite dev`)
 # =============================================================================
 # Copy this file to `.dev.vars` (which is gitignored) and adjust values as
 # needed. Do NOT put real production secrets here — `.dev.vars` is for local
@@ -9,20 +9,20 @@
 # Better Auth signing secret. Any non-empty random string is fine for local dev.
 BETTER_AUTH_SECRET=dev-secret-change-me
 
-# Base URL Better Auth uses when constructing OAuth redirect URIs. For
-# `wrangler dev --local`, this matches the default Miniflare listen address.
+# Base URL Better Auth uses when constructing OAuth redirect URIs. This must
+# match the dev origin — `vite.config.ts` pins the dev server to port 8787.
 # In production it must point at the real public origin.
 BETTER_AUTH_URL=http://localhost:8787
 
 # -----------------------------------------------------------------------------
 # Google OAuth client credentials
 # -----------------------------------------------------------------------------
-# These are intentionally left empty — Issue #7 sets up the *plumbing* for
-# Google OAuth (Better Auth provider config, DB tables, route mounting) but
-# does NOT acquire real Google Cloud OAuth credentials. That work happens in
-# a follow-up issue once the local plumbing is verified to boot.
+# Create an OAuth 2.0 Client ID (type: Web application) in Google Cloud Console
+# and register:
+#   - Authorized redirect URI:  http://localhost:8787/api/auth/callback/google
+#   - Authorized JavaScript origin: http://localhost:8787
 #
-# Local boot (`wrangler dev --local`) succeeds with empty values. Actual
-# Google sign-in will fail until both fields are populated — by design.
+# Local boot succeeds with empty values, but actual Google sign-in fails until
+# both fields are populated.
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
