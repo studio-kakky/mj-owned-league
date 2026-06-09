@@ -26,8 +26,9 @@ describe('InviteAcceptScreen — valid invitation', () => {
   it('renders the JANROKU wordmark and accept heading', () => {
     render(<InviteAcceptScreen verification={validVerification} onAccept={vi.fn()} />);
 
-    expect(screen.getByText('JANROKU')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '招待を受け入れる' })).toBeInTheDocument();
+    // The wordmark doubles as the page's single top-level heading.
+    expect(screen.getByRole('heading', { name: 'JANROKU' })).toBeInTheDocument();
+    expect(screen.getByText('招待を受け取りました。')).toBeInTheDocument();
   });
 
   it('shows the issuer email, memo, and expiry date', () => {

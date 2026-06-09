@@ -8,9 +8,9 @@ export const SummaryPill = ({
   value: string;
 }) => {
   return (
-    <div data-testid={testId} className="flex flex-col gap-1">
-      <dt className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">{label}</dt>
-      <dd className="truncate text-sm font-semibold text-zinc-100">{value}</dd>
+    <div data-testid={testId} className="flex flex-col gap-1 bg-[#0E0E0E] px-2 py-3">
+      <dt className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#666666]">{label}</dt>
+      <dd className="truncate text-sm font-semibold text-[#FAFAF8]">{value}</dd>
     </div>
   );
 };

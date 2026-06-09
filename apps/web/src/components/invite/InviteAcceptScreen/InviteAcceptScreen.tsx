@@ -15,10 +15,15 @@
  *   - モバイル 375pt 基準。`max-w-sm` を保ち、ログイン画面と並びを揃える。
  *
  * デザイン source:
- *   `api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Invite.html`
- *   は 404 (バンドル期限切れ) のため、視覚スタイルは S1 ログイン
- *   (`routes/login.tsx`) と PublicShell の既存トークンに揃える: zinc-950
- *   背景、emerald アクセント、rounded-full ピル型ボタン、JANROKU ワードマーク。
+ *   Claude Design ハンドオフバンドル `Invite.html` → `invite.jsx` (S2)。
+ *   確定形は S1 と同系のダーク (#0E0E0E / #FAFAF8, Geist + JetBrains Mono):
+ *   左寄せ JANROKU mono ワードマーク → 「招待を受け取りました。」見出し →
+ *   招待元カード (アバター + FROM + identity) → 白い 52px Google ボタン
+ *   (角丸 6px・公式 4 色 G) → ドット注記 → mono フッター。
+ *   デザインは 氏名 + メール + アバター "TK" を出すが、ドメインに Owner 表示名
+ *   が無く `issuerEmail` しか手元に無いため (`server/invitation-accept.ts`)、
+ *   identity 行に email を出し、アバターはメールから導出する。Phone の
+ *   ステータスバー / ホームインジケータは端末クロームなので描画しない。
  */
 
 import type { InvitationInvalidReason } from '../../../services';
@@ -55,15 +60,18 @@ export interface InviteAcceptScreenProps {
 export const InviteAcceptScreen = ({ verification, onAccept }: InviteAcceptScreenProps) => {
   return (
     <main
-      className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100"
+      className="flex min-h-screen justify-center bg-[#0E0E0E] font-sans text-[#FAFAF8]"
       data-testid="invite-accept-screen"
     >
-      <header className="px-6 pt-10">
-        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-100">JANROKU</p>
-      </header>
+      {/* Mobile column (375pt), centred so the phone proportions hold on wider
+          viewports — same shell as S1 ログイン (`routes/login.tsx`). */}
+      <div className="flex w-full max-w-sm flex-col">
+        <section className="flex flex-1 flex-col justify-center px-8">
+          {/* JANROKU mono wordmark — brand mark + the page's single h1. */}
+          <h1 className="font-mono text-[22px] font-medium tracking-[0.24em] text-[#FAFAF8]">
+            JANROKU
+          </h1>
 
-      <section className="flex flex-1 flex-col items-center justify-center px-6 pb-16">
-        <div className="w-full max-w-sm space-y-8">
           {verification.kind === 'valid' ? (
             <ValidBody
               memo={verification.memo}
@@ -74,14 +82,20 @@ export const InviteAcceptScreen = ({ verification, onAccept }: InviteAcceptScree
           ) : (
             <InvalidBody reason={verification.reason} />
           )}
-        </div>
-      </section>
+        </section>
 
-      <footer className="border-t border-zinc-900 bg-zinc-950">
-        <div className="mx-auto flex max-w-sm flex-col items-center gap-2 px-6 py-6 text-xs text-zinc-500">
-          <p>JANROKU は招待制の麻雀リーグ記録サービスです。</p>
-        </div>
-      </footer>
+        <footer className="flex items-center justify-between px-6 pt-6 pb-7 font-mono text-[10px] tracking-[0.08em] text-[#888888]">
+          <div className="flex gap-3.5">
+            <a href="/terms" className="text-[#AAAAAA] no-underline hover:underline">
+              利用規約
+            </a>
+            <a href="/privacy" className="text-[#AAAAAA] no-underline hover:underline">
+              プライバシー
+            </a>
+          </div>
+          <span>© 2026</span>
+        </footer>
+      </div>
     </main>
   );
 };

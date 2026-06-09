@@ -1,5 +1,28 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+
+// Stub TanStack Router's <Link> — the drawer's quick links (グループを管理 /
+// 招待 / 設定) use it, and the real component needs a router context we don't
+// boot for these component-level tests.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    children,
+    className,
+    onClick,
+    ...rest
+  }: {
+    to: string;
+    children: React.ReactNode;
+    className?: string;
+    onClick?: () => void;
+  } & Record<string, unknown>) => (
+    <a href={to} className={className} onClick={onClick} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
 import { GroupSwitcherSheet } from '../../../src/components/layout/GroupSwitcherSheet';
 
 describe('GroupSwitcherSheet', () => {

@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { GroupHomeMatchRow } from '../types';
 import { EmptyState } from './EmptyState';
 import { formatDate } from './formatDate';
-import { GroupHomeSection } from './GroupHomeSection';
+import { ChevronRight, GroupHomeSection } from './GroupHomeSection';
 
 export const MatchesSection = ({
   groupId,
@@ -28,27 +28,32 @@ export const MatchesSection = ({
           ctaSearch={{ groupId }}
         />
       ) : (
-        <ul className="space-y-2" data-testid="group-home-matches-list">
+        <ul data-testid="group-home-matches-list">
           {matches.map((match) => (
             <li key={match.id} data-testid={`group-home-match-row-${match.id}`}>
               <Link
                 to="/matches/$matchId"
                 params={{ matchId: match.id }}
-                className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 transition-colors hover:border-emerald-500/70"
+                className="flex items-center justify-between gap-3 border-t border-[#1F1F1F] px-5 py-3.5 transition-colors [&:last-child]:border-b hover:bg-[#141414]"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-zinc-100">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-medium text-[#FAFAF8]">
                     {match.sequenceNumber !== null ? `第 ${match.sequenceNumber} 節 ` : ''}
                     {match.name}
                   </p>
-                  <p className="mt-1 truncate text-xs text-zinc-500">
-                    {match.leagueName === null ? 'League 外' : match.leagueName} / 対局{' '}
-                    {match.gameCount} 件
+                  <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-xs text-[#666666]">
+                    {match.leagueName === null ? (
+                      <span className="text-[#555555]">リーグ外</span>
+                    ) : (
+                      <span>{match.leagueName}</span>
+                    )}
+                    <span>·</span>
+                    <span>対局 {match.gameCount} 件</span>
+                    <span>·</span>
+                    <span>{match.heldAt === null ? '日付未設定' : formatDate(match.heldAt)}</span>
                   </p>
                 </div>
-                <span className="shrink-0 text-xs text-zinc-500">
-                  {match.heldAt === null ? '日付未設定' : formatDate(match.heldAt)}
-                </span>
+                <ChevronRight className="shrink-0 text-[#888888]" />
               </Link>
             </li>
           ))}

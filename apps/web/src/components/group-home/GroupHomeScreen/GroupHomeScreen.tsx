@@ -42,7 +42,7 @@ export interface GroupHomeScreenProps {
 
 export const GroupHomeScreen = ({ data }: GroupHomeScreenProps) => {
   return (
-    <section className="space-y-6" data-testid="group-home-screen">
+    <section className="-mx-4 -mt-4 pb-2 font-sans" data-testid="group-home-screen">
       <GroupHeader data={data} />
       <SettingsLinkSection groupId={data.id} />
       <LeaguesSection groupId={data.id} leagues={data.leagues} />

@@ -157,125 +157,149 @@ export const LeagueFormModal = ({
     }
   };
 
+  const fieldClass =
+    'block h-10 w-full rounded-md border border-[#262626] bg-[#181818] px-3 text-sm text-[#FAFAF8] placeholder:text-[#666666] focus:border-[#3a3a3a] focus:outline-none';
+  const labelClass =
+    'mb-1.5 block font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[#888888]';
+
   return (
     <Modal open={open} onClose={onClose} labelledBy={titleId} testId="league-create-modal">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="space-y-1">
-          <h2 id={titleId} className="text-base font-semibold text-zinc-100">
-            リーグを作成
+      <form onSubmit={handleSubmit} className="flex flex-col">
+        <div className="flex shrink-0 items-center gap-3 border-b border-[#1F1F1F] px-4 py-3.5">
+          <h2 id={titleId} className="flex-1 text-[15px] font-semibold text-[#FAFAF8]">
+            新しいリーグを作る
           </h2>
-          <p className="text-xs text-zinc-500">
-            形式と Ruleset は作成後に編集できません。最初の対局を追加すると形式は固定されます。
-          </p>
+          <button
+            type="button"
+            aria-label="閉じる"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="-mr-1 inline-flex items-center justify-center p-1 text-[#FAFAF8] disabled:opacity-60"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <title>閉じる</title>
+              <path
+                d="M5 5 L15 15 M15 5 L5 15"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        {groups.length === 0 ? (
-          <p
-            data-testid="league-form-no-groups"
-            className="rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
-          >
-            グループがまだありません。先にグループを作成してください。
-          </p>
-        ) : (
-          <>
-            <div className="space-y-2">
-              <label htmlFor={nameId} className="block text-xs font-medium text-zinc-300">
-                リーグ名
-              </label>
-              <input
-                ref={inputRef}
-                id={nameId}
-                type="text"
-                required
-                value={name}
-                maxLength={60}
-                onChange={(event) => setName(event.target.value)}
-                data-testid="league-form-name-input"
-                className="block w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
-                placeholder="例: 2026 春シーズン"
-              />
-            </div>
+        <div className="px-5 py-5">
+          {groups.length === 0 ? (
+            <p
+              data-testid="league-form-no-groups"
+              className="rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
+            >
+              グループがまだありません。先にグループを作成してください。
+            </p>
+          ) : (
+            <>
+              <div className="mb-4">
+                <label htmlFor={nameId} className={labelClass}>
+                  名前
+                </label>
+                <input
+                  ref={inputRef}
+                  id={nameId}
+                  type="text"
+                  required
+                  value={name}
+                  maxLength={60}
+                  onChange={(event) => setName(event.target.value)}
+                  data-testid="league-form-name-input"
+                  className={fieldClass}
+                  placeholder="例：2026 春シーズン"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <label htmlFor={formatId} className="block text-xs font-medium text-zinc-300">
-                形式
-              </label>
-              <select
-                id={formatId}
-                value={format}
-                onChange={(event) => setFormat(event.target.value as LeagueFormat)}
-                data-testid="league-form-format-input"
-                className="block w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
-              >
-                {LEAGUE_FORMATS.map((value) => (
-                  <option key={value} value={value}>
-                    {FORMAT_LABELS[value]}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="mb-4">
+                <label htmlFor={formatId} className={labelClass}>
+                  標準対局形式
+                </label>
+                <select
+                  id={formatId}
+                  value={format}
+                  onChange={(event) => setFormat(event.target.value as LeagueFormat)}
+                  data-testid="league-form-format-input"
+                  className={fieldClass}
+                >
+                  {LEAGUE_FORMATS.map((value) => (
+                    <option key={value} value={value}>
+                      {FORMAT_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] text-[#666666]">
+                  対局追加時の初期値として使用 (個別に変更可)
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <label htmlFor={groupId} className="block text-xs font-medium text-zinc-300">
-                所属グループ
-              </label>
-              <select
-                id={groupId}
-                value={selectedGroupId}
-                onChange={(event) => handleGroupChange(event.target.value)}
-                data-testid="league-form-group-input"
-                className="block w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
-              >
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="mb-4">
+                <label htmlFor={groupId} className={labelClass}>
+                  グループ
+                </label>
+                <select
+                  id={groupId}
+                  value={selectedGroupId}
+                  onChange={(event) => handleGroupChange(event.target.value)}
+                  data-testid="league-form-group-input"
+                  className={fieldClass}
+                >
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="space-y-2">
-              <label htmlFor={rulesetId} className="block text-xs font-medium text-zinc-300">
-                デフォルト Ruleset
-              </label>
-              <select
-                id={rulesetId}
-                value={selectedRulesetId}
-                onChange={(event) => setSelectedRulesetId(event.target.value)}
-                data-testid="league-form-ruleset-input"
-                className="block w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-emerald-500 focus:outline-none"
-              >
-                <option value={NO_RULESET_VALUE}>グループの既定を使用</option>
-                {filteredRulesets.map((ruleset) => (
-                  <option key={ruleset.id} value={ruleset.id}>
-                    {ruleset.name}
-                    {ruleset.isGroupDefault ? '（既定）' : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-zinc-500">
-                対局ごとに Ruleset を上書きできます。未指定の場合はグループの既定が使われます。
-              </p>
-            </div>
-          </>
-        )}
+              <div>
+                <label htmlFor={rulesetId} className={labelClass}>
+                  ルール
+                </label>
+                <select
+                  id={rulesetId}
+                  value={selectedRulesetId}
+                  onChange={(event) => setSelectedRulesetId(event.target.value)}
+                  data-testid="league-form-ruleset-input"
+                  className={fieldClass}
+                >
+                  <option value={NO_RULESET_VALUE}>グループの既定を使用</option>
+                  {filteredRulesets.map((ruleset) => (
+                    <option key={ruleset.id} value={ruleset.id}>
+                      {ruleset.name}
+                      {ruleset.isGroupDefault ? '（既定）' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] text-[#666666]">
+                  対局ごとに Ruleset を上書きできます。未指定の場合はグループの既定が使われます。
+                </p>
+              </div>
+            </>
+          )}
 
-        {error !== null ? (
-          <p
-            role="alert"
-            data-testid="league-form-error"
-            className="rounded-lg border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
-          >
-            {error}
-          </p>
-        ) : null}
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="league-form-error"
+              className="mt-3 rounded border border-rose-900/60 bg-rose-950/40 px-3 py-2 text-xs text-rose-200"
+            >
+              {error}
+            </p>
+          ) : null}
+        </div>
 
-        <div className="flex items-center justify-end gap-2 pt-1">
+        <div className="mb-5 flex shrink-0 justify-center gap-2 px-4">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-full px-4 py-2 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full border border-[#262626] px-3.5 text-[13px] font-medium text-[#FAFAF8] transition-colors hover:border-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-60"
           >
             キャンセル
           </button>
@@ -283,7 +307,7 @@ export const LeagueFormModal = ({
             type="submit"
             disabled={isSubmitting || groups.length === 0}
             data-testid="league-form-submit"
-            className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-[34px] rounded-full bg-[#FAFAF8] px-[18px] text-[13px] font-semibold text-[#0E0E0E] transition-colors hover:bg-white disabled:cursor-not-allowed disabled:bg-[#2a2a2a] disabled:text-[#666666]"
           >
             {isSubmitting ? '送信中…' : '作成'}
           </button>

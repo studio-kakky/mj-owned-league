@@ -3,9 +3,12 @@ import { FILTERS } from './filters';
 
 export const FilterPills = ({
   active,
+  counts,
   onChange,
 }: {
   active: LeagueListFilter;
+  /** Per-filter result count shown as a mono suffix on each pill. */
+  counts: Readonly<Record<LeagueListFilter, number>>;
   onChange: (next: LeagueListFilter) => void;
 }) => {
   return (
@@ -13,7 +16,7 @@ export const FilterPills = ({
       role="tablist"
       aria-label="リーグの状態で絞り込み"
       data-testid="leagues-filter-pills"
-      className="flex items-center gap-2"
+      className="flex gap-1.5 overflow-x-auto px-5 pb-1"
     >
       {FILTERS.map((entry) => {
         const isActive = entry.value === active;
@@ -25,13 +28,18 @@ export const FilterPills = ({
             aria-selected={isActive}
             onClick={() => onChange(entry.value)}
             data-testid={`leagues-filter-${entry.value.toLowerCase()}`}
-            className={
+            className={`flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs transition-colors ${
               isActive
-                ? 'rounded-full bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200'
-                : 'rounded-full border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-            }
+                ? 'border-[#FAFAF8] bg-[#FAFAF8] font-semibold text-[#0E0E0E]'
+                : 'border-[#2a2a2a] text-[#888888] hover:text-[#FAFAF8]'
+            }`}
           >
-            {entry.label}
+            <span>{entry.label}</span>
+            <span
+              className={`font-mono text-[11px] ${isActive ? 'text-[#0E0E0E] opacity-70' : 'text-[#666666]'}`}
+            >
+              {counts[entry.value]}
+            </span>
           </button>
         );
       })}

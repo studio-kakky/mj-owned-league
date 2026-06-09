@@ -1,15 +1,16 @@
 /**
  * Top bar for Owner-facing pages.
  *
- * Contains:
- *  - The JANROKU wordmark (links to `/`).
- *  - The active-group selector trigger (opens the GroupSwitcherSheet via
- *    the prop callback). When the user is not signed in we render the
- *    trigger as disabled so the visual rhythm of the header is preserved
- *    even on guest views (S1 redirect, mid-auth states, etc.).
+ * Design source: `header_footer.jsx` (Claude Design handoff). Dark chrome —
+ * JANROKU mono wordmark on the left (links to `/`), active-group selector on
+ * the right (group name + caret) that opens the GroupSwitcherSheet.
+ *
+ * When the user is not signed in the trigger renders disabled so the header's
+ * visual rhythm is preserved on guest views (S1 redirect / mid-auth states).
  */
 
 import { Link } from '@tanstack/react-router';
+import { CaretDownIcon } from './icons';
 import type { GroupSummary, OwnerSession } from './types';
 
 export interface OwnerHeaderProps {
@@ -22,9 +23,12 @@ export const OwnerHeader = ({ session, activeGroup, onOpenGroupSwitcher }: Owner
   const isAuthenticated = session !== null;
 
   return (
-    <header className="sticky top-0 z-30 border-b border-zinc-900 bg-zinc-950/95 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
-        <Link to="/" className="text-sm font-semibold uppercase tracking-[0.25em] text-zinc-100">
+    <header className="sticky top-0 z-30 border-b border-[#1F1F1F] bg-[#0E0E0E]">
+      <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-2.5">
+        <Link
+          to="/"
+          className="px-2 font-mono text-[13px] font-medium tracking-[0.24em] text-[#FAFAF8]"
+        >
           JANROKU
         </Link>
 
@@ -35,14 +39,12 @@ export const OwnerHeader = ({ session, activeGroup, onOpenGroupSwitcher }: Owner
           aria-haspopup="dialog"
           aria-label="グループ切替"
           data-testid="owner-header-group-trigger"
-          className="flex max-w-[55%] items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-zinc-700 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex max-w-[55%] items-center gap-2 px-2 py-1.5 text-[#FAFAF8] transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span className="truncate">
+          <span className="truncate text-sm font-medium">
             {activeGroup ? activeGroup.name : isAuthenticated ? 'グループ未選択' : 'ゲスト'}
           </span>
-          <span aria-hidden="true" className="text-zinc-500">
-            ▾
-          </span>
+          <CaretDownIcon className="shrink-0 text-[#888888]" />
         </button>
       </div>
     </header>

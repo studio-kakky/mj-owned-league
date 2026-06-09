@@ -12,7 +12,7 @@ describe('GroupFormModal — create', () => {
 
   it('renders the create title and submit label when mode=create', () => {
     render(<GroupFormModal open mode="create" onClose={() => {}} onSubmit={() => {}} />);
-    expect(screen.getByText('グループを作成')).toBeInTheDocument();
+    expect(screen.getByText('新しいグループ')).toBeInTheDocument();
     expect(screen.getByTestId('group-form-submit')).toHaveTextContent('作成');
   });
 
