@@ -44,8 +44,8 @@
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { authClient } from '../auth/client';
 import { consumeInvitationServerFn } from '../server/invitation-accept';
+import { getSessionServerFn } from '../server/session';
 import type { InvitationInvalidReason } from '../services';
 import { INVITATION_INVALID_REASONS, InvitationInvalidError } from '../services';
 
@@ -86,16 +86,16 @@ export const Route = createFileRoute('/invitations/accept/$token/complete')({
     // 1. Confirm Better Auth has a session. Without one, the user never
     //    completed Google OAuth — send them back to `/login` so they can
     //    retry (or to the accept page if they have the token URL handy).
-    let session: Awaited<ReturnType<typeof authClient.getSession>> | null = null;
+    let user: Awaited<ReturnType<typeof getSessionServerFn>> = null;
     try {
-      session = await authClient.getSession();
+      user = await getSessionServerFn();
     } catch {
       throw redirect({ to: '/login' });
     }
-    if (!session?.data?.user) {
+    if (!user) {
       throw redirect({ to: '/login' });
     }
-    const userId = session.data.user.id;
+    const userId = user.id;
 
     // 2. Consume the token. The service re-verifies and atomically marks
     //    the row CONSUMED.
