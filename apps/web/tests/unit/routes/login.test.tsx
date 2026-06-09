@@ -27,6 +27,14 @@ vi.mock('../../../src/auth/client', () => ({
   },
 }));
 
+// The login route imports `getSessionServerFn` (for its `beforeLoad` redirect
+// of already-authenticated owners). That module imports `cloudflare:workers`,
+// which vitest/jsdom cannot resolve — and these tests only exercise the
+// component, never `beforeLoad`. Stubbing it keeps the import graph clean.
+vi.mock('../../../src/server/session', () => ({
+  getSessionServerFn: vi.fn(),
+}));
+
 // `createFileRoute` is a registration call with side effects on the
 // router. For the component-only tests we don't need it to actually
 // register anything — the file already imports the React component we

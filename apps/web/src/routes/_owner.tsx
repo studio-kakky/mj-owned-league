@@ -26,9 +26,9 @@
  */
 
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
-import { authClient } from '../auth/client';
 import { OwnerShell } from '../components/layout';
 import type { OwnerSession } from '../components/layout/types';
+import { getSessionServerFn } from '../server/session';
 
 const OwnerLayout = () => {
   const { ownerSession } = Route.useRouteContext();
@@ -50,9 +50,9 @@ const OwnerLayout = () => {
 
 export const Route = createFileRoute('/_owner')({
   beforeLoad: async () => {
-    let session: Awaited<ReturnType<typeof authClient.getSession>> | null = null;
+    let user: Awaited<ReturnType<typeof getSessionServerFn>> = null;
     try {
-      session = await authClient.getSession();
+      user = await getSessionServerFn();
     } catch {
       // Network or Worker-side failure. Treat as unauthenticated — the
       // user will see the login page rather than a partially-rendered
@@ -61,17 +61,16 @@ export const Route = createFileRoute('/_owner')({
       throw redirect({ to: '/login' });
     }
 
-    if (!session?.data?.user) {
+    if (!user) {
       throw redirect({ to: '/login' });
     }
 
-    const user = session.data.user;
     const ownerSession: OwnerSession = {
       ownerId: user.id,
       // `user.name` is what Better Auth populates from Google's `name`
       // claim. When it is empty (extremely rare with Google but possible
       // with other providers), fall back to the local-part of the email.
-      displayName: user.name?.trim().length ? user.name : (user.email?.split('@')[0] ?? 'Owner'),
+      displayName: user.name.trim().length ? user.name : (user.email.split('@')[0] ?? 'Owner'),
     };
 
     return { ownerSession };
