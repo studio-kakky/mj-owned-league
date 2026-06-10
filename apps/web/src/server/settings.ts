@@ -45,38 +45,65 @@ import type {
   SettingsPlayerItem,
   SettingsRulesetItem,
 } from '../components/settings';
-import type { Group, NewPlayer, NewRuleset, Player, Ruleset } from '../db/schema';
+import type { Database } from '../db/client';
+import type { Group, NewPlayer, NewRuleset, Ruleset } from '../db/schema';
 import { UMA_PATTERNS } from '../db/schema';
-import type { PlayerRepository, RulesetRepository } from '../repositories/interfaces';
+import {
+  DrizzleGroupRepository,
+  DrizzlePlayerRepository,
+  DrizzleRulesetRepository,
+} from '../repositories/drizzle';
+import type {
+  GroupRepository,
+  PlayerRepository,
+  RulesetRepository,
+} from '../repositories/interfaces';
 import { PlayerHasHistoryError } from '../services/errors';
 import { PlayerService } from '../services/player-service';
 import { RulesetService, TobiConfigurationError } from '../services/ruleset-service';
+import { getRequestDb, requireOwnerId } from './context';
+import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
 import {
-  type GroupServerStore,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-  seedDevDataIfEmpty,
-} from './groups-store';
+  MemoryGroupRepository,
+  MemoryPlayerRepository,
+  MemoryRulesetRepository,
+} from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Repository facade — identical shape to `groups.ts`. We construct fresh
 // service instances per call so they pick up the latest store state.
+//
+// Two backings (Issue #39): pass the request's Drizzle `db` for the D1 path
+// (production), or nothing for the in-memory path the unit tests drive. All
+// Group ownership checks go through the `groups` repository so the same
+// handler logic works against either backing.
 // ---------------------------------------------------------------------------
 
 interface ServerRepos {
-  store: GroupServerStore;
+  groups: GroupRepository;
   rulesetService: RulesetService;
   playerService: PlayerService;
   rulesets: RulesetRepository;
   players: PlayerRepository;
 }
 
-const makeRepos = (): ServerRepos => {
-  const store = getGroupServerStore();
-  const rulesets = new MemoryRulesetRepository(store);
-  const players = new MemoryPlayerRepository(store);
+const makeRepos = (db?: Database): ServerRepos => {
+  const { groups, rulesets, players } = db
+    ? {
+        groups: new DrizzleGroupRepository(db),
+        rulesets: new DrizzleRulesetRepository(db),
+        players: new DrizzlePlayerRepository(db),
+      }
+    : (() => {
+        const store = getGroupServerStore();
+        return {
+          groups: new MemoryGroupRepository(store),
+          rulesets: new MemoryRulesetRepository(store),
+          players: new MemoryPlayerRepository(store),
+        };
+      })();
   return {
-    store,
+    groups,
     rulesets,
     players,
     rulesetService: new RulesetService(rulesets),
@@ -88,8 +115,11 @@ const makeRepos = (): ServerRepos => {
 // Input validators
 // ---------------------------------------------------------------------------
 
+// Client-facing validators. `ownerId` is resolved server-side from the session
+// (`requireOwnerId()`), so it never appears in the wire payload. The handler
+// input types add `ownerId` back because the handlers — the testable seam —
+// still take it explicitly.
 const settingsInput = z.object({
-  ownerId: z.string().min(1),
   /**
    * Optional Group selector. When supplied (and owned by the caller), the
    * loader builds the Settings payload for that Group instead of the
@@ -114,52 +144,47 @@ const rulesetFormSchema = z.object({
 });
 
 const createRulesetInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
   input: rulesetFormSchema,
 });
 
 const updateRulesetInput = z.object({
-  ownerId: z.string().min(1),
   rulesetId: z.string().min(1),
   input: rulesetFormSchema,
 });
 
 const deleteRulesetInput = z.object({
-  ownerId: z.string().min(1),
   rulesetId: z.string().min(1),
 });
 
 const setDefaultRulesetInput = z.object({
-  ownerId: z.string().min(1),
   rulesetId: z.string().min(1),
 });
 
 const createPlayerInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
   name: z.string().trim().min(1).max(40),
 });
 
 const renamePlayerInput = z.object({
-  ownerId: z.string().min(1),
   playerId: z.string().min(1),
   name: z.string().trim().min(1).max(40),
 });
 
 const playerIdInput = z.object({
-  ownerId: z.string().min(1),
   playerId: z.string().min(1),
 });
 
-export type SettingsInput = z.infer<typeof settingsInput>;
-export type CreateRulesetServerInput = z.infer<typeof createRulesetInput>;
-export type UpdateRulesetServerInput = z.infer<typeof updateRulesetInput>;
-export type DeleteRulesetServerInput = z.infer<typeof deleteRulesetInput>;
-export type SetDefaultRulesetServerInput = z.infer<typeof setDefaultRulesetInput>;
-export type CreatePlayerServerInput = z.infer<typeof createPlayerInput>;
-export type RenamePlayerServerInput = z.infer<typeof renamePlayerInput>;
-export type PlayerIdServerInput = z.infer<typeof playerIdInput>;
+type WithOwner<T> = T & { ownerId: string };
+
+export type SettingsInput = WithOwner<z.infer<typeof settingsInput>>;
+export type CreateRulesetServerInput = WithOwner<z.infer<typeof createRulesetInput>>;
+export type UpdateRulesetServerInput = WithOwner<z.infer<typeof updateRulesetInput>>;
+export type DeleteRulesetServerInput = WithOwner<z.infer<typeof deleteRulesetInput>>;
+export type SetDefaultRulesetServerInput = WithOwner<z.infer<typeof setDefaultRulesetInput>>;
+export type CreatePlayerServerInput = WithOwner<z.infer<typeof createPlayerInput>>;
+export type RenamePlayerServerInput = WithOwner<z.infer<typeof renamePlayerInput>>;
+export type PlayerIdServerInput = WithOwner<z.infer<typeof playerIdInput>>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -188,16 +213,16 @@ const projectRuleset = (
  * legitimate caller (the route's loader-fed UI) cannot land here with a
  * mismatched id.
  */
-const assertGroupOwnedBy = (
-  store: GroupServerStore,
+const assertGroupOwnedBy = async (
+  groups: GroupRepository,
   groupId: string,
   ownerId: string,
-): Promise<void> => {
-  const group = store.groups.get(groupId);
+): Promise<Group> => {
+  const group = await groups.findById(groupId);
   if (!group || group.ownerId !== ownerId) {
-    return Promise.reject(new Error('Group not found or not owned by caller.'));
+    throw new Error('Group not found or not owned by caller.');
   }
-  return Promise.resolve();
+  return group;
 };
 
 /**
@@ -226,14 +251,17 @@ const rethrowDomainError = (cause: unknown): never => {
  *   3. List the active Group's Rulesets and Players via the repository
  *      interfaces, then project each into the screen's shape.
  */
-export const getSettingsHandler = async (input: SettingsInput): Promise<SettingsData> => {
-  seedDevDataIfEmpty(input.ownerId);
+export const getSettingsHandler = async (
+  input: SettingsInput,
+  db?: Database,
+): Promise<SettingsData> => {
+  if (!db) seedDevDataIfEmpty(input.ownerId);
 
-  const { store, rulesets, players } = makeRepos();
+  const { groups, rulesets, players } = makeRepos(db);
 
-  const ownedGroups = [...store.groups.values()]
-    .filter((g) => g.ownerId === input.ownerId)
-    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0));
+  const ownedGroups = [...(await groups.listByOwner(input.ownerId))].sort((a, b) =>
+    a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0,
+  );
 
   if (ownedGroups.length === 0) {
     return { group: null, rulesets: [], players: [] };
@@ -291,9 +319,10 @@ export const getSettingsHandler = async (input: SettingsInput): Promise<Settings
 
 export const createRulesetHandler = async (
   input: CreateRulesetServerInput,
+  db?: Database,
 ): Promise<SettingsRulesetItem> => {
-  const { store, rulesetService } = makeRepos();
-  await assertGroupOwnedBy(store, input.groupId, input.ownerId);
+  const { groups, rulesetService } = makeRepos(db);
+  const group = await assertGroupOwnedBy(groups, input.groupId, input.ownerId);
 
   const newRow: NewRuleset = {
     id: globalThis.crypto.randomUUID(),
@@ -302,8 +331,7 @@ export const createRulesetHandler = async (
   };
   try {
     const ruleset = await rulesetService.create(newRow);
-    const group = store.groups.get(input.groupId);
-    return projectRuleset(ruleset, group?.defaultRulesetId ?? null);
+    return projectRuleset(ruleset, group.defaultRulesetId ?? null);
   } catch (cause) {
     throw rethrowDomainError(cause);
   }
@@ -311,16 +339,17 @@ export const createRulesetHandler = async (
 
 export const updateRulesetHandler = async (
   input: UpdateRulesetServerInput,
+  db?: Database,
 ): Promise<SettingsRulesetItem | null> => {
-  const { store, rulesetService, rulesets } = makeRepos();
+  const { groups, rulesetService, rulesets } = makeRepos(db);
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return null;
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   try {
     const updated = await rulesetService.update(input.rulesetId, input.input);
     if (updated === null) return null;
-    const group = store.groups.get(updated.groupId);
+    const group = await groups.findById(updated.groupId);
     return projectRuleset(updated, group?.defaultRulesetId ?? null);
   } catch (cause) {
     throw rethrowDomainError(cause);
@@ -329,17 +358,17 @@ export const updateRulesetHandler = async (
 
 export const deleteRulesetHandler = async (
   input: DeleteRulesetServerInput,
+  db?: Database,
 ): Promise<{ deleted: boolean }> => {
-  const { store, rulesetService, rulesets } = makeRepos();
+  const { groups, rulesetService, rulesets } = makeRepos(db);
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return { deleted: false };
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  const group = await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   // Refuse to delete the Group's current default Ruleset — the schema would
   // null it out silently otherwise. The UI also disables the affordance, but
   // we re-check here to close the TOCTOU window.
-  const group = store.groups.get(existing.groupId);
-  if (group?.defaultRulesetId === existing.id) {
+  if (group.defaultRulesetId === existing.id) {
     throw new Error(
       'Ruleset is set as the group default; pick another default first before deleting.',
     );
@@ -351,23 +380,23 @@ export const deleteRulesetHandler = async (
 
 export const setDefaultRulesetHandler = async (
   input: SetDefaultRulesetServerInput,
+  db?: Database,
 ): Promise<{ ok: boolean }> => {
-  const { store, rulesets } = makeRepos();
+  const { groups, rulesets } = makeRepos(db);
   const existing = await rulesets.findById(input.rulesetId);
   if (existing === null) return { ok: false };
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  const group = await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
-  const group = store.groups.get(existing.groupId);
-  if (!group) return { ok: false };
-  store.groups.set(group.id, { ...group, defaultRulesetId: existing.id });
-  return { ok: true };
+  const updated = await groups.update(group.id, { defaultRulesetId: existing.id });
+  return { ok: updated !== null };
 };
 
 export const createPlayerHandler = async (
   input: CreatePlayerServerInput,
+  db?: Database,
 ): Promise<SettingsPlayerItem> => {
-  const { store, playerService } = makeRepos();
-  await assertGroupOwnedBy(store, input.groupId, input.ownerId);
+  const { groups, playerService } = makeRepos(db);
+  await assertGroupOwnedBy(groups, input.groupId, input.ownerId);
 
   const newRow: NewPlayer = {
     id: globalThis.crypto.randomUUID(),
@@ -382,11 +411,12 @@ export const createPlayerHandler = async (
 
 export const renamePlayerHandler = async (
   input: RenamePlayerServerInput,
+  db?: Database,
 ): Promise<SettingsPlayerItem | null> => {
-  const { store, playerService, players } = makeRepos();
+  const { groups, playerService, players } = makeRepos(db);
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   const updated = await playerService.update(input.playerId, { name: input.name });
   if (updated === null) return null;
@@ -396,11 +426,12 @@ export const renamePlayerHandler = async (
 
 export const deletePlayerHandler = async (
   input: PlayerIdServerInput,
+  db?: Database,
 ): Promise<{ deleted: boolean }> => {
-  const { store, playerService, players } = makeRepos();
+  const { groups, playerService, players } = makeRepos(db);
   const existing = await players.findById(input.playerId);
   if (existing === null) return { deleted: false };
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   try {
     const deleted = await playerService.delete(input.playerId);
@@ -415,11 +446,12 @@ export const deletePlayerHandler = async (
 
 export const deactivatePlayerHandler = async (
   input: PlayerIdServerInput,
+  db?: Database,
 ): Promise<SettingsPlayerItem | null> => {
-  const { store, playerService, players } = makeRepos();
+  const { groups, playerService, players } = makeRepos(db);
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   const updated = await playerService.deactivate(input.playerId);
   if (updated === null) return null;
@@ -429,11 +461,12 @@ export const deactivatePlayerHandler = async (
 
 export const reactivatePlayerHandler = async (
   input: PlayerIdServerInput,
+  db?: Database,
 ): Promise<SettingsPlayerItem | null> => {
-  const { store, playerService, players } = makeRepos();
+  const { groups, playerService, players } = makeRepos(db);
   const existing = await players.findById(input.playerId);
   if (existing === null) return null;
-  await assertGroupOwnedBy(store, existing.groupId, input.ownerId);
+  await assertGroupOwnedBy(groups, existing.groupId, input.ownerId);
 
   const updated = await playerService.reactivate(input.playerId);
   if (updated === null) return null;
@@ -447,121 +480,60 @@ export const reactivatePlayerHandler = async (
 
 export const getSettingsServerFn = createServerFn({ method: 'GET' })
   .inputValidator(settingsInput)
-  .handler(({ data }) => getSettingsHandler(data));
+  .handler(async ({ data }) =>
+    getSettingsHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const createRulesetServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createRulesetInput)
-  .handler(({ data }) => createRulesetHandler(data));
+  .handler(async ({ data }) =>
+    createRulesetHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const updateRulesetServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateRulesetInput)
-  .handler(({ data }) => updateRulesetHandler(data));
+  .handler(async ({ data }) =>
+    updateRulesetHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const deleteRulesetServerFn = createServerFn({ method: 'POST' })
   .inputValidator(deleteRulesetInput)
-  .handler(({ data }) => deleteRulesetHandler(data));
+  .handler(async ({ data }) =>
+    deleteRulesetHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const setDefaultRulesetServerFn = createServerFn({ method: 'POST' })
   .inputValidator(setDefaultRulesetInput)
-  .handler(({ data }) => setDefaultRulesetHandler(data));
+  .handler(async ({ data }) =>
+    setDefaultRulesetHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const createPlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createPlayerInput)
-  .handler(({ data }) => createPlayerHandler(data));
+  .handler(async ({ data }) =>
+    createPlayerHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const renamePlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(renamePlayerInput)
-  .handler(({ data }) => renamePlayerHandler(data));
+  .handler(async ({ data }) =>
+    renamePlayerHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const deletePlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(playerIdInput)
-  .handler(({ data }) => deletePlayerHandler(data));
+  .handler(async ({ data }) =>
+    deletePlayerHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const deactivatePlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(playerIdInput)
-  .handler(({ data }) => deactivatePlayerHandler(data));
+  .handler(async ({ data }) =>
+    deactivatePlayerHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const reactivatePlayerServerFn = createServerFn({ method: 'POST' })
   .inputValidator(playerIdInput)
-  .handler(({ data }) => reactivatePlayerHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repositories
-// ---------------------------------------------------------------------------
-// Same pattern as `MemoryGroupRepository` etc. in `server/groups.ts`. The
-// store key for `players` is already declared on `GroupServerStore`, so we
-// only need to read / write through it.
-
-class MemoryRulesetRepository implements RulesetRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Ruleset | null> {
-    return this.store.rulesets.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Ruleset[]> {
-    return [...this.store.rulesets.values()].filter((r) => r.groupId === groupId);
-  }
-
-  async create(input: InMemoryStoreShape['rulesets']): Promise<Ruleset> {
-    const row: Ruleset = {
-      tobiEnabled: false,
-      tobiPoint: null,
-      ...input,
-    } as Ruleset;
-    this.store.rulesets.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Ruleset, 'id'>>): Promise<Ruleset | null> {
-    const existing = this.store.rulesets.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.rulesets.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.rulesets.delete(id);
-  }
-}
-
-class MemoryPlayerRepository implements PlayerRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Player | null> {
-    return this.store.players.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Player[]> {
-    return [...this.store.players.values()].filter((p) => p.groupId === groupId);
-  }
-
-  async create(input: InMemoryStoreShape['players']): Promise<Player> {
-    const row: Player = {
-      createdAt: new Date().toISOString(),
-      isActive: true,
-      ...input,
-    } as Player;
-    this.store.players.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Player, 'id'>>): Promise<Player | null> {
-    const existing = this.store.players.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.players.set(id, next);
-    return next;
-  }
-
-  async hasGameHistory(_id: string): Promise<boolean> {
-    // GameResult is not yet modelled in the in-memory store; see file header
-    // for why this always returns false today.
-    return false;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.players.delete(id);
-  }
-}
+  .handler(async ({ data }) =>
+    reactivatePlayerHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );

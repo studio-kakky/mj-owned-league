@@ -231,4 +231,3 @@ export class GroupService {
     return this.groups.delete(id);
   }
 }
-

@@ -248,16 +248,32 @@ describe('Player mutations', () => {
 
   it('deletes a player without history', async () => {
     const data = await getSettingsHandler({ ownerId: owner });
-    const target = data.players[0];
+    const groupId = data.group?.id;
+    expect(groupId).toBeDefined();
+    if (!groupId) return;
+
+    // The seeded roster players carry GameResults (so `hasGameHistory` is now
+    // true for them — the in-memory store models GameResult rows since #39).
+    // To exercise the delete happy path we add a fresh player, which by
+    // definition has no history, then delete it.
+    const fresh = await createPlayerHandler({ ownerId: owner, groupId, name: '新メンバー' });
+
+    const result = await deletePlayerHandler({ ownerId: owner, playerId: fresh.id });
+    expect(result).toEqual({ deleted: true });
+  });
+
+  it('refuses to delete a player who has game history (offers deactivate instead)', async () => {
+    // The seeded friday roster players each have a GameResult, so deletion is
+    // blocked and the service rethrows a serialisable error the modal turns
+    // into the "非アクティブ化" flow.
+    const data = await getSettingsHandler({ ownerId: owner });
+    const target = data.players.find((p) => p.hasHistory === true);
     expect(target).toBeDefined();
     if (!target) return;
 
-    // hasHistory is currently always false from the in-memory repo, so the
-    // happy path is the only one we can exercise here. The
-    // "PlayerHasHistoryError" rethrow is covered by the service-layer test
-    // suite (`tests/unit/services/player-service.test.ts`).
-    const result = await deletePlayerHandler({ ownerId: owner, playerId: target.id });
-    expect(result).toEqual({ deleted: true });
+    await expect(deletePlayerHandler({ ownerId: owner, playerId: target.id })).rejects.toThrow(
+      /game history/,
+    );
   });
 
   it('toggles a player to inactive and back', async () => {

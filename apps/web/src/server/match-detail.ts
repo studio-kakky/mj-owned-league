@@ -53,38 +53,53 @@ import type {
   MatchRankingRow,
   MatchRulesetOption,
 } from '../components/matches';
-import type {
-  Game,
-  GameResult,
-  LeagueFormat,
-  Match,
-  NewGame,
-  NewGameResult,
-  Ruleset,
-} from '../db/schema';
+import type { Database } from '../db/client';
+import type { Game, GameResult, LeagueFormat, NewGame, NewGameResult, Ruleset } from '../db/schema';
 import { TOBI_ROLES } from '../db/schema';
 import { calculateGamePoints, rankWithUma } from '../domain/scoring';
+import {
+  DrizzleGameRepository,
+  DrizzleGameResultRepository,
+  DrizzleGroupRepository,
+  DrizzleLeagueRepository,
+  DrizzleMatchRepository,
+  DrizzlePlayerRepository,
+  DrizzleRulesetRepository,
+} from '../repositories/drizzle';
 import type {
   GameRepository,
   GameResultRepository,
+  GroupRepository,
+  LeagueRepository,
   MatchRepository,
+  PlayerRepository,
+  RulesetRepository,
 } from '../repositories/interfaces';
 import { GameResultService } from '../services/game-result-service';
 import { GameService } from '../services/game-service';
+import { getRequestDb, requireOwnerId } from './context';
+import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
 import {
-  type GroupServerStore,
-  gameResultKey,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-  seedDevDataIfEmpty,
-} from './groups-store';
+  MemoryGameRepository,
+  MemoryGameResultRepository,
+  MemoryGroupRepository,
+  MemoryLeagueRepository,
+  MemoryMatchRepository,
+  MemoryPlayerRepository,
+  MemoryRulesetRepository,
+} from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Repository facade
 // ---------------------------------------------------------------------------
+// Pass the request's Drizzle `db` for the D1 path, or nothing for the
+// in-memory path the unit tests drive.
 
 interface ServerRepos {
-  store: GroupServerStore;
+  groups: GroupRepository;
+  leagues: LeagueRepository;
+  rulesets: RulesetRepository;
+  players: PlayerRepository;
   games: GameRepository;
   matches: MatchRepository;
   gameResults: GameResultRepository;
@@ -92,32 +107,47 @@ interface ServerRepos {
   gameResultService: GameResultService;
 }
 
-const makeRepos = (): ServerRepos => {
-  const store = getGroupServerStore();
-  const games = new MemoryGameRepository(store);
-  const matches = new MemoryMatchRepository(store);
-  const gameResults = new MemoryGameResultRepository(store);
+const makeRepos = (db?: Database): ServerRepos => {
+  const built = db
+    ? {
+        groups: new DrizzleGroupRepository(db),
+        leagues: new DrizzleLeagueRepository(db),
+        rulesets: new DrizzleRulesetRepository(db),
+        players: new DrizzlePlayerRepository(db),
+        games: new DrizzleGameRepository(db),
+        matches: new DrizzleMatchRepository(db),
+        gameResults: new DrizzleGameResultRepository(db),
+      }
+    : (() => {
+        const store = getGroupServerStore();
+        return {
+          groups: new MemoryGroupRepository(store),
+          leagues: new MemoryLeagueRepository(store),
+          rulesets: new MemoryRulesetRepository(store),
+          players: new MemoryPlayerRepository(store),
+          games: new MemoryGameRepository(store),
+          matches: new MemoryMatchRepository(store),
+          gameResults: new MemoryGameResultRepository(store),
+        };
+      })();
   return {
-    store,
-    games,
-    matches,
-    gameResults,
-    gameService: new GameService(games, matches),
-    gameResultService: new GameResultService(gameResults),
+    ...built,
+    gameService: new GameService(built.games, built.matches),
+    gameResultService: new GameResultService(built.gameResults),
   };
 };
 
 // ---------------------------------------------------------------------------
 // Validators
 // ---------------------------------------------------------------------------
+// `ownerId` is resolved server-side from the session; the `*Input` handler
+// types add it back via `WithOwner`.
 
 const matchDetailInput = z.object({
-  ownerId: z.string().min(1),
   matchId: z.string().min(1),
 });
 
 const matchListInput = z.object({
-  ownerId: z.string().min(1),
   leagueId: z.string().min(1).optional(),
   /**
    * Optional Group filter. When supplied (and the Group is owned by the
@@ -135,7 +165,6 @@ const playerInput = z.object({
 });
 
 const gameSubmitInput = z.object({
-  ownerId: z.string().min(1),
   matchId: z.string().min(1),
   gameId: z.string().min(1).nullable(),
   rulesetId: z.string().min(1),
@@ -144,14 +173,15 @@ const gameSubmitInput = z.object({
 });
 
 const gameDeleteInput = z.object({
-  ownerId: z.string().min(1),
   gameId: z.string().min(1),
 });
 
-export type MatchDetailInput = z.infer<typeof matchDetailInput>;
-export type MatchListInput = z.infer<typeof matchListInput>;
-export type GameSubmitServerInput = z.infer<typeof gameSubmitInput>;
-export type GameDeleteInput = z.infer<typeof gameDeleteInput>;
+type WithOwner<T> = T & { ownerId: string };
+
+export type MatchDetailInput = WithOwner<z.infer<typeof matchDetailInput>>;
+export type MatchListInput = WithOwner<z.infer<typeof matchListInput>>;
+export type GameSubmitServerInput = WithOwner<z.infer<typeof gameSubmitInput>>;
+export type GameDeleteInput = WithOwner<z.infer<typeof gameDeleteInput>>;
 
 // ---------------------------------------------------------------------------
 // Projection helpers
@@ -159,12 +189,12 @@ export type GameDeleteInput = z.infer<typeof gameDeleteInput>;
 
 const projectGameRow = (
   game: Game,
-  store: GroupServerStore,
+  gameResults: ReadonlyArray<GameResult>,
   playerNameById: ReadonlyMap<string, string>,
   rulesetNameById: ReadonlyMap<string, string>,
 ): MatchGameRow => {
   const results: MatchGameResultRow[] = [];
-  for (const result of store.gameResults.values()) {
+  for (const result of gameResults) {
     if (result.gameId !== game.id) continue;
     results.push({
       playerId: result.playerId,
@@ -283,10 +313,16 @@ const compareMatchListItems = (
 // straight from the modal; the server-side schemas already match.
 // ---------------------------------------------------------------------------
 
+/**
+ * Wire payload for `submitGameServerFn`. The shape no longer carries `ownerId`
+ * — the server resolves it from the session — so this is the modal payload
+ * verbatim minus any owner field.
+ */
+export type GameSubmitWireInput = z.infer<typeof gameSubmitInput>;
+
 /** Type-narrowing bridge so the route layer can spread the modal payload. */
-export const bridgeGameSubmit = (ownerId: string, input: GameSubmitInput): GameSubmitServerInput => {
+export const bridgeGameSubmit = (input: GameSubmitInput): GameSubmitWireInput => {
   return {
-    ownerId,
     matchId: input.matchId,
     gameId: input.gameId,
     rulesetId: input.rulesetId,
@@ -310,16 +346,17 @@ export const bridgeGameSubmit = (ownerId: string, input: GameSubmitInput): GameS
  */
 export const getMatchDetailHandler = async (
   input: MatchDetailInput,
+  db?: Database,
 ): Promise<MatchDetailData | null> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store } = makeRepos();
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const repos = makeRepos(db);
 
-  const match = store.matches.get(input.matchId);
-  if (match === undefined) return null;
-  const group = store.groups.get(match.groupId);
+  const match = await repos.matches.findById(input.matchId);
+  if (match === null) return null;
+  const group = await repos.groups.findById(match.groupId);
   if (!group || group.ownerId !== input.ownerId) return null;
 
-  const league = match.leagueId === null ? null : (store.leagues.get(match.leagueId) ?? null);
+  const league = match.leagueId === null ? null : await repos.leagues.findById(match.leagueId);
   const format: LeagueFormat = league?.format ?? '4P_HANCHAN';
 
   // Resolve the Match-effective default Ruleset: Match.default → League.default
@@ -327,12 +364,16 @@ export const getMatchDetailHandler = async (
   const effectiveDefaultRulesetId =
     match.defaultRulesetId ?? league?.defaultRulesetId ?? group.defaultRulesetId ?? null;
 
-  const groupRulesets = [...store.rulesets.values()].filter((r) => r.groupId === group.id);
+  const [groupRulesets, groupPlayers, games] = await Promise.all([
+    repos.rulesets.listByGroup(group.id),
+    repos.players.listByGroup(group.id),
+    repos.games.listByMatch(match.id),
+  ]);
+
   const availableRulesets: MatchRulesetOption[] = groupRulesets.map((r) =>
     projectRulesetOption(r, effectiveDefaultRulesetId, group.defaultRulesetId),
   );
 
-  const groupPlayers = [...store.players.values()].filter((p) => p.groupId === group.id);
   const availablePlayers: MatchPlayerOption[] = groupPlayers
     .filter((p) => p.isActive)
     .map((p) => ({ id: p.id, name: p.name, isActive: p.isActive }));
@@ -342,12 +383,18 @@ export const getMatchDetailHandler = async (
   const playerNameById = new Map(groupPlayers.map((p) => [p.id, p.name] as const));
   const rulesetNameById = new Map(groupRulesets.map((r) => [r.id, r.name] as const));
 
-  const games = [...store.games.values()].filter((g) => g.matchId === match.id);
   // Newest first — same convention as League detail's recent games feed.
-  games.sort((a, b) => (a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0));
+  const sortedGames = [...games].sort((a, b) =>
+    a.playedAt > b.playedAt ? -1 : a.playedAt < b.playedAt ? 1 : 0,
+  );
 
-  const gameRows: MatchGameRow[] = games.map((g) =>
-    projectGameRow(g, store, playerNameById, rulesetNameById),
+  const gameResultsNested = await Promise.all(
+    sortedGames.map((g) => repos.gameResults.listByGame(g.id)),
+  );
+  const allGameResults: GameResult[] = gameResultsNested.flat();
+
+  const gameRows: MatchGameRow[] = sortedGames.map((g) =>
+    projectGameRow(g, allGameResults, playerNameById, rulesetNameById),
   );
   const ranking = computeMatchRanking(gameRows, playerNameById, format);
 
@@ -379,37 +426,56 @@ export const getMatchDetailHandler = async (
  * filtered to that League; otherwise every Match across the Owner's Groups
  * is surfaced.
  */
-export const listMatchesHandler = async (input: MatchListInput): Promise<MatchListData> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store } = makeRepos();
+export const listMatchesHandler = async (
+  input: MatchListInput,
+  db?: Database,
+): Promise<MatchListData> => {
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const repos = makeRepos(db);
 
-  const ownedGroups = [...store.groups.values()].filter((g) => g.ownerId === input.ownerId);
+  const ownedGroups = await repos.groups.listByOwner(input.ownerId);
   const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
   const groupNameById = new Map(ownedGroups.map((g) => [g.id, g.name] as const));
+
+  // Gather Leagues / Matches / Games per owned Group through the repositories.
+  const perGroup = await Promise.all(
+    ownedGroups.map(async (group) => {
+      const [leagues, matches, games] = await Promise.all([
+        repos.leagues.listByGroup(group.id),
+        repos.matches.listByGroup(group.id),
+        repos.games.listByGroup(group.id),
+      ]);
+      return { group, leagues, matches, games };
+    }),
+  );
 
   const leagueNameById = new Map<string, string>();
   // Collected separately so the in-page リーグセレクタ can render every owned
   // League, not just the ones with matches yet. Sorted later (groupName-then-
   // leagueName ascending) so leagues from the same Group cluster together.
   const leagueOptionRows: Array<MatchListLeagueOption> = [];
-  for (const l of store.leagues.values()) {
-    if (!ownedGroupIds.has(l.groupId)) continue;
-    leagueNameById.set(l.id, l.name);
-    leagueOptionRows.push({
-      id: l.id,
-      name: l.name,
-      groupName: groupNameById.get(l.groupId) ?? '',
-    });
+  for (const { leagues } of perGroup) {
+    for (const l of leagues) {
+      leagueNameById.set(l.id, l.name);
+      leagueOptionRows.push({
+        id: l.id,
+        name: l.name,
+        groupName: groupNameById.get(l.groupId) ?? '',
+      });
+    }
   }
   leagueOptionRows.sort((a, b) => {
     if (a.groupName !== b.groupName) return a.groupName.localeCompare(b.groupName);
     return a.name.localeCompare(b.name);
   });
 
+  const allLeagues = perGroup.flatMap((p) => p.leagues);
+  const leagueById = new Map(allLeagues.map((l) => [l.id, l] as const));
+
   let scopedLeague: { id: string; name: string; groupName: string } | null = null;
   let leagueFilter: string | null = null;
   if (input.leagueId !== undefined) {
-    const league = store.leagues.get(input.leagueId);
+    const league = leagueById.get(input.leagueId);
     if (league && ownedGroupIds.has(league.groupId)) {
       leagueFilter = league.id;
       const groupName = groupNameById.get(league.groupId) ?? '';
@@ -426,22 +492,26 @@ export const listMatchesHandler = async (input: MatchListInput): Promise<MatchLi
       ? input.groupId
       : null;
 
-  const matches = [...store.matches.values()].filter((m) => {
-    if (!ownedGroupIds.has(m.groupId)) return false;
-    if (leagueFilter !== null && m.leagueId !== leagueFilter) return false;
-    if (groupFilter !== null && m.groupId !== groupFilter) return false;
-    return true;
-  });
+  const matches = perGroup
+    .flatMap((p) => p.matches)
+    .filter((m) => {
+      if (!ownedGroupIds.has(m.groupId)) return false;
+      if (leagueFilter !== null && m.leagueId !== leagueFilter) return false;
+      if (groupFilter !== null && m.groupId !== groupFilter) return false;
+      return true;
+    });
 
-  // Game count / last-played-at lookups — single pass.
+  // Game count / last-played-at lookups — single pass over all owned Games.
   const gameCountByMatch = new Map<string, number>();
   const lastPlayedAtByMatch = new Map<string, string>();
-  for (const g of store.games.values()) {
-    if (g.matchId === null) continue;
-    gameCountByMatch.set(g.matchId, (gameCountByMatch.get(g.matchId) ?? 0) + 1);
-    const prev = lastPlayedAtByMatch.get(g.matchId);
-    if (prev === undefined || g.playedAt > prev) {
-      lastPlayedAtByMatch.set(g.matchId, g.playedAt);
+  for (const { games } of perGroup) {
+    for (const g of games) {
+      if (g.matchId === null) continue;
+      gameCountByMatch.set(g.matchId, (gameCountByMatch.get(g.matchId) ?? 0) + 1);
+      const prev = lastPlayedAtByMatch.get(g.matchId);
+      if (prev === undefined || g.playedAt > prev) {
+        lastPlayedAtByMatch.set(g.matchId, g.playedAt);
+      }
     }
   }
 
@@ -501,24 +571,26 @@ export const listMatchesHandler = async (input: MatchListInput): Promise<MatchLi
  */
 export const submitGameHandler = async (
   input: GameSubmitServerInput,
+  db?: Database,
 ): Promise<{ gameId: string }> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store, gameService, gameResultService } = makeRepos();
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const { groups, leagues, rulesets, players, matches, gameService, gameResultService } =
+    makeRepos(db);
 
-  const match = store.matches.get(input.matchId);
+  const match = await matches.findById(input.matchId);
   if (!match) throw new Error('Match not found.');
-  const group = store.groups.get(match.groupId);
+  const group = await groups.findById(match.groupId);
   if (!group || group.ownerId !== input.ownerId) {
     throw new Error('Match not found or not owned by caller.');
   }
 
-  const ruleset = store.rulesets.get(input.rulesetId);
+  const ruleset = await rulesets.findById(input.rulesetId);
   if (!ruleset || ruleset.groupId !== group.id) {
     throw new Error('Ruleset not found in the selected Group.');
   }
 
   // Format resolution mirrors the detail handler: League → fallback default.
-  const league = match.leagueId === null ? null : (store.leagues.get(match.leagueId) ?? null);
+  const league = match.leagueId === null ? null : await leagues.findById(match.leagueId);
   const format: LeagueFormat = league?.format ?? '4P_HANCHAN';
   const expectedPlayerCount = format.startsWith('3P') ? 3 : 4;
 
@@ -530,7 +602,7 @@ export const submitGameHandler = async (
 
   // Cross-check every player is active and belongs to the Match's Group.
   for (const p of input.players) {
-    const player = store.players.get(p.playerId);
+    const player = await players.findById(p.playerId);
     if (!player || player.groupId !== group.id) {
       throw new Error('プレイヤーがこのグループに属していません。');
     }
@@ -573,7 +645,7 @@ export const submitGameHandler = async (
     const created = await gameService.create(newGame);
     gameId = created.id;
   } else {
-    const existing = store.games.get(input.gameId);
+    const existing = await gameService.findById(input.gameId);
     if (!existing || existing.matchId !== match.id) {
       throw new Error('編集対象の対局が見つかりません。');
     }
@@ -602,13 +674,16 @@ export const submitGameHandler = async (
   return { gameId };
 };
 
-export const deleteGameHandler = async (input: GameDeleteInput): Promise<{ deleted: boolean }> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store, gameService, gameResultService } = makeRepos();
+export const deleteGameHandler = async (
+  input: GameDeleteInput,
+  db?: Database,
+): Promise<{ deleted: boolean }> => {
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const { groups, gameService, gameResultService } = makeRepos(db);
 
-  const game = store.games.get(input.gameId);
+  const game = await gameService.findById(input.gameId);
   if (!game) return { deleted: false };
-  const group = store.groups.get(game.groupId);
+  const group = await groups.findById(game.groupId);
   if (!group || group.ownerId !== input.ownerId) {
     throw new Error('Game not found or not owned by caller.');
   }
@@ -624,150 +699,27 @@ export const deleteGameHandler = async (input: GameDeleteInput): Promise<{ delet
 
 export const getMatchDetailServerFn = createServerFn({ method: 'GET' })
   .inputValidator(matchDetailInput)
-  .handler(({ data }) => getMatchDetailHandler(data));
+  .handler(async ({ data }) =>
+    getMatchDetailHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const listMatchesServerFn = createServerFn({ method: 'GET' })
   .inputValidator(matchListInput)
-  .handler(({ data }) => listMatchesHandler(data));
+  .handler(async ({ data }) =>
+    listMatchesHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const submitGameServerFn = createServerFn({ method: 'POST' })
   .inputValidator(gameSubmitInput)
-  .handler(({ data }) => submitGameHandler(data));
+  .handler(async ({ data }) =>
+    submitGameHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const deleteGameServerFn = createServerFn({ method: 'POST' })
   .inputValidator(gameDeleteInput)
-  .handler(({ data }) => deleteGameHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repositories
-// ---------------------------------------------------------------------------
-
-class MemoryMatchRepository implements MatchRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Match | null> {
-    return this.store.matches.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Match[]> {
-    return [...this.store.matches.values()].filter((m) => m.groupId === groupId);
-  }
-
-  async listByLeague(leagueId: string): Promise<Match[]> {
-    return [...this.store.matches.values()].filter((m) => m.leagueId === leagueId);
-  }
-
-  async create(input: InMemoryStoreShape['matches']): Promise<Match> {
-    const row: Match = {
-      createdAt: new Date().toISOString(),
-      heldAt: null,
-      memo: null,
-      sequenceNumber: null,
-      defaultRulesetId: null,
-      leagueId: null,
-      ...input,
-    } as Match;
-    this.store.matches.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Match, 'id'>>): Promise<Match | null> {
-    const existing = this.store.matches.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.matches.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.matches.delete(id);
-  }
-}
-
-class MemoryGameRepository implements GameRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Game | null> {
-    return this.store.games.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.groupId === groupId);
-  }
-
-  async listByMatch(matchId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.matchId === matchId);
-  }
-
-  async listByLeague(leagueId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.leagueId === leagueId);
-  }
-
-  async create(input: InMemoryStoreShape['games']): Promise<Game> {
-    const row: Game = {
-      createdAt: new Date().toISOString(),
-      matchId: null,
-      leagueId: null,
-      ...input,
-    } as Game;
-    this.store.games.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Game, 'id'>>): Promise<Game | null> {
-    const existing = this.store.games.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.games.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.games.delete(id);
-  }
-}
-
-class MemoryGameResultRepository implements GameResultRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async listByGame(gameId: string): Promise<GameResult[]> {
-    return [...this.store.gameResults.values()].filter((r) => r.gameId === gameId);
-  }
-
-  async createMany(inputs: NewGameResult[]): Promise<GameResult[]> {
-    const rows: GameResult[] = inputs.map(
-      (input) =>
-        ({
-          tobiRole: null,
-          ...input,
-        }) as GameResult,
-    );
-    for (const row of rows) {
-      this.store.gameResults.set(gameResultKey(row.gameId, row.playerId), row);
-    }
-    return rows;
-  }
-
-  async replaceForGame(gameId: string, inputs: NewGameResult[]): Promise<GameResult[]> {
-    // Delete-then-insert. The in-memory map has no transaction primitive,
-    // but the operations are synchronous so the intermediate state is not
-    // observable across server functions.
-    await this.deleteByGame(gameId);
-    return this.createMany(inputs);
-  }
-
-  async deleteByGame(gameId: string): Promise<number> {
-    let count = 0;
-    for (const key of [...this.store.gameResults.keys()]) {
-      const row = this.store.gameResults.get(key);
-      if (row && row.gameId === gameId) {
-        this.store.gameResults.delete(key);
-        count += 1;
-      }
-    }
-    return count;
-  }
-}
+  .handler(async ({ data }) =>
+    deleteGameHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 // Re-export the scoring helpers so callers (tests, future server modules)
 // know the canonical pipeline lives in `domain/scoring`. This is purely

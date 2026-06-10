@@ -21,9 +21,9 @@ const LeagueDetailPage = () => {
 };
 
 export const Route = createFileRoute('/_owner/leagues/$leagueId')({
-  loader: async ({ context, params }) => {
+  loader: async ({ params }) => {
     const data = await getLeagueDetailServerFn({
-      data: { ownerId: context.ownerSession.ownerId, leagueId: params.leagueId },
+      data: { leagueId: params.leagueId },
     });
     if (data === null) {
       // Stale or cross-owner id. Send the user back to the list rather than

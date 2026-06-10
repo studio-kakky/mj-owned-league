@@ -42,35 +42,30 @@ import {
 
 const GroupsPage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { items } = Route.useLoaderData();
 
   const handleCreate = useCallback(
     async (name: string) => {
-      await createGroupServerFn({ data: { ownerId: ownerSession.ownerId, name } });
+      await createGroupServerFn({ data: { name } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleRename = useCallback(
     async (groupId: string, name: string) => {
-      await renameGroupServerFn({
-        data: { ownerId: ownerSession.ownerId, groupId, name },
-      });
+      await renameGroupServerFn({ data: { groupId, name } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleDelete = useCallback(
     async (groupId: string) => {
-      await deleteGroupServerFn({
-        data: { ownerId: ownerSession.ownerId, groupId },
-      });
+      await deleteGroupServerFn({ data: { groupId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   return (
@@ -84,14 +79,12 @@ const GroupsPage = () => {
 };
 
 export const Route = createFileRoute('/_owner/groups')({
-  // The active owner id comes from the `_owner` parent layout's
-  // `beforeLoad`, which is exposed on `context.ownerSession`. TanStack Router
-  // re-runs the loader when the route is invalidated (after mutations
-  // below), which is exactly the cadence we want.
-  loader: async ({ context }) => {
-    const items = await listGroupsServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
-    });
+  // `listGroupsServerFn` resolves the owner server-side from the session, so
+  // the loader no longer threads `ownerId` through the request. TanStack
+  // Router re-runs the loader on invalidation (after the mutations below),
+  // which is exactly the cadence we want.
+  loader: async () => {
+    const items = await listGroupsServerFn();
     return { items };
   },
   component: GroupsPage,

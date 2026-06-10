@@ -17,45 +17,43 @@
  *     they exist to bridge the RPC boundary and to project domain rows into
  *     the screen's shape.
  *
- * What is still TODO (out of scope for Issue #15):
- *   The TanStack Start ↔ Workers integration now exposes `env.DB` to the
- *   server side (`src/routes/api/auth/$.ts` reads the binding via
- *   `cloudflare:workers`), but this module has not yet been switched over:
- *   it still backs its `GroupService` / `GameService` instances with an
- *   in-process `Map` (`makeMemoryRepos`).
- *   Crucially, the data lives on the *server* side of the RPC boundary:
- *     - The state survives navigation, but not a Node process restart.
- *     - The client cannot mutate it without going through a server function.
- *   The only change required is swapping `makeMemoryRepos()` for a factory
- *   that returns `Drizzle*Repository` instances backed by the now-reachable
- *   `env.DB` (imported from `cloudflare:workers`).
+ * Persistence (Issue #39):
+ *   The `createServerFn` wrappers build a request-scoped Drizzle client from
+ *   the D1 binding (`getRequestDb()`) and pass it into the handlers, so writes
+ *   land in D1 and survive process restarts. The handlers keep an optional
+ *   `db` parameter; when it is omitted they fall back to the process-wide
+ *   in-memory store, which is the seam the unit tests drive.
  *
- * Owner identity:
- *   D1 access is required to validate a Better Auth session server-side, so
- *   for now the client passes `ownerId` to every server function. This is
- *   the same value `_owner.tsx` `beforeLoad` already exposes from
- *   `authClient.getSession()`. When server functions gain D1 access we will
- *   replace this with a server-side session read; the call signature on the
- *   client stays the same because the loader / mutation wrappers in this
- *   file own the conversion.
+ * Owner identity (Issue #39):
+ *   `ownerId` is resolved server-side from the Better Auth session
+ *   (`requireOwnerId()`) inside each wrapper — it is no longer accepted from
+ *   the client. The handlers still take `ownerId` explicitly so tests can pass
+ *   it directly, but on the wire there is no client-supplied owner id to forge.
  */
 
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import type { GroupListItem } from '../components/groups';
-import type { Game, Group, Ruleset } from '../db/schema';
+import type { Database } from '../db/client';
+import type { Game, Group } from '../db/schema';
+import {
+  DrizzleGameRepository,
+  DrizzleGroupRepository,
+  DrizzleRulesetRepository,
+} from '../repositories/drizzle';
 import type {
   GameRepository,
   GroupRepository,
   RulesetRepository,
 } from '../repositories/interfaces';
 import { GroupHasHistoryError, GroupService } from '../services/group-service';
+import { getRequestDb, requireOwnerId } from './context';
+import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
 import {
-  type GroupServerStore,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-  seedDevDataIfEmpty,
-} from './groups-store';
+  MemoryGameRepository,
+  MemoryGroupRepository,
+  MemoryRulesetRepository,
+} from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Repository facade
@@ -63,8 +61,15 @@ import {
 // The route layer should not know which storage is backing the service. The
 // `makeRepos` factory returns a freshly-instantiated `GroupService` and
 // exposes the repositories it owns, so the server-function bodies stay
-// declarative. The current implementation returns in-memory repositories; the
-// D1-backed swap is a one-file change here.
+// declarative.
+//
+// Two backings (Issue #39):
+//   - Pass a `Database` (the request-scoped Drizzle client from
+//     `getRequestDb()`) and the repos talk to D1. This is the production path:
+//     the `createServerFn` wrappers below inject it.
+//   - Pass nothing and the repos read/write the process-wide in-memory store.
+//     This is the seam the unit tests drive — `listGroupsHandler({ ownerId })`
+//     with no `db` exercises the same logic against `getGroupServerStore()`.
 
 interface ServerRepos {
   service: GroupService;
@@ -73,11 +78,21 @@ interface ServerRepos {
   games: GameRepository;
 }
 
-const makeRepos = (): ServerRepos => {
-  const store = getGroupServerStore();
-  const groups = new MemoryGroupRepository(store);
-  const rulesets = new MemoryRulesetRepository(store);
-  const games = new MemoryGameRepository(store);
+const makeRepos = (db?: Database): ServerRepos => {
+  const { groups, rulesets, games } = db
+    ? {
+        groups: new DrizzleGroupRepository(db),
+        rulesets: new DrizzleRulesetRepository(db),
+        games: new DrizzleGameRepository(db),
+      }
+    : (() => {
+        const store = getGroupServerStore();
+        return {
+          groups: new MemoryGroupRepository(store),
+          rulesets: new MemoryRulesetRepository(store),
+          games: new MemoryGameRepository(store),
+        };
+      })();
   const service = new GroupService({
     groups,
     rulesets,
@@ -95,25 +110,25 @@ const makeRepos = (): ServerRepos => {
 // wrappers below are 1:1 with the handlers and exist solely to declare the
 // validator + RPC method to TanStack Start.
 
-const listGroupsInput = z.object({ ownerId: z.string().min(1) });
+// Client-facing validators. `ownerId` is intentionally absent: it is resolved
+// server-side from the session (`requireOwnerId()`), not accepted from the
+// caller. The `*Input` types below add `ownerId` because the handlers — the
+// testable seam — still take it explicitly.
 const createGroupInput = z.object({
-  ownerId: z.string().min(1),
   name: z.string().trim().min(1).max(60),
 });
 const renameGroupInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
   name: z.string().trim().min(1).max(60),
 });
 const deleteGroupInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
 });
 
-export type ListGroupsInput = z.infer<typeof listGroupsInput>;
-export type CreateGroupInput = z.infer<typeof createGroupInput>;
-export type RenameGroupInput = z.infer<typeof renameGroupInput>;
-export type DeleteGroupInput = z.infer<typeof deleteGroupInput>;
+export type ListGroupsInput = { ownerId: string };
+export type CreateGroupInput = z.infer<typeof createGroupInput> & { ownerId: string };
+export type RenameGroupInput = z.infer<typeof renameGroupInput> & { ownerId: string };
+export type DeleteGroupInput = z.infer<typeof deleteGroupInput> & { ownerId: string };
 
 // ---------------------------------------------------------------------------
 // Projection helper
@@ -150,13 +165,13 @@ const projectToListItem = (group: Group, games: ReadonlyArray<Game>): GroupListI
  */
 export const listGroupsHandler = async (
   input: ListGroupsInput,
+  db?: Database,
 ): Promise<ReadonlyArray<GroupListItem>> => {
-  // Materialise the dev fixtures on the first call per owner. No-op
-  // afterwards. Lives behind the in-memory storage swap so it disappears
-  // when D1 is wired.
-  seedDevDataIfEmpty(input.ownerId);
+  // Materialise the dev fixtures on the first call per owner — memory mode
+  // only. With D1 wired the data lives in the database, so we never seed.
+  if (!db) seedDevDataIfEmpty(input.ownerId);
 
-  const { service, games } = makeRepos();
+  const { service, games } = makeRepos(db);
   const groups = await service.listByOwner(input.ownerId);
 
   return Promise.all(
@@ -172,8 +187,11 @@ export const listGroupsHandler = async (
  * `GroupListItem` so the route can show it without waiting for the next list
  * re-fetch (though the route also `invalidate`s).
  */
-export const createGroupHandler = async (input: CreateGroupInput): Promise<GroupListItem> => {
-  const { service } = makeRepos();
+export const createGroupHandler = async (
+  input: CreateGroupInput,
+  db?: Database,
+): Promise<GroupListItem> => {
+  const { service } = makeRepos(db);
   const { group } = await service.createWithDefaultRuleset({
     ownerId: input.ownerId,
     name: input.name,
@@ -189,8 +207,9 @@ export const createGroupHandler = async (input: CreateGroupInput): Promise<Group
  */
 export const renameGroupHandler = async (
   input: RenameGroupInput,
+  db?: Database,
 ): Promise<GroupListItem | null> => {
-  const { service, games } = makeRepos();
+  const { service, games } = makeRepos(db);
   // Guard against cross-owner mutation. If the row exists but belongs to
   // someone else, we return `null` rather than 403; the loader's
   // ownership-filtered list is the source of truth for the UI anyway.
@@ -211,8 +230,9 @@ export const renameGroupHandler = async (
  */
 export const deleteGroupHandler = async (
   input: DeleteGroupInput,
+  db?: Database,
 ): Promise<{ deleted: boolean }> => {
-  const { service } = makeRepos();
+  const { service } = makeRepos(db);
   const existing = await service.findById(input.groupId);
   if (existing === null || existing.ownerId !== input.ownerId) {
     return { deleted: false };
@@ -241,147 +261,24 @@ export const deleteGroupHandler = async (
 // the testable seams, and these wrappers register them with TanStack Start
 // so they cross the RPC boundary in production.
 
-export const listGroupsServerFn = createServerFn({ method: 'GET' })
-  .inputValidator(listGroupsInput)
-  .handler(({ data }) => listGroupsHandler(data));
+export const listGroupsServerFn = createServerFn({ method: 'GET' }).handler(async () =>
+  listGroupsHandler({ ownerId: await requireOwnerId() }, getRequestDb()),
+);
 
 export const createGroupServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createGroupInput)
-  .handler(({ data }) => createGroupHandler(data));
+  .handler(async ({ data }) =>
+    createGroupHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const renameGroupServerFn = createServerFn({ method: 'POST' })
   .inputValidator(renameGroupInput)
-  .handler(({ data }) => renameGroupHandler(data));
+  .handler(async ({ data }) =>
+    renameGroupHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const deleteGroupServerFn = createServerFn({ method: 'POST' })
   .inputValidator(deleteGroupInput)
-  .handler(({ data }) => deleteGroupHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repository implementations
-// ---------------------------------------------------------------------------
-// These exist because TanStack Start cannot yet reach `env.DB` from a server
-// function. They are deliberately *not* exported — the only sanctioned access
-// path is via `makeRepos()` above, which means a future Drizzle-backed swap
-// is a one-line change at the factory.
-//
-// Why we don't reuse `tests/unit/services/fakes.ts`:
-//   The test fakes intentionally start empty per `it`. The server store
-//   needs to persist across requests within a single dev session; sharing a
-//   module-level `Map` is exactly that. Keeping the two implementations
-//   separate also means we can swap this one to Drizzle without disturbing
-//   the unit tests.
-
-class MemoryGroupRepository implements GroupRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Group | null> {
-    return this.store.groups.get(id) ?? null;
-  }
-
-  async listByOwner(ownerId: string): Promise<Group[]> {
-    return [...this.store.groups.values()].filter((g) => g.ownerId === ownerId);
-  }
-
-  async create(input: InMemoryStoreShape['groups']): Promise<Group> {
-    const row: Group = {
-      // Domain rows in Drizzle carry `createdAt` populated by SQLite default;
-      // for the in-memory store we set it explicitly so the shape matches
-      // `Group` exactly.
-      createdAt: new Date().toISOString(),
-      defaultRulesetId: null,
-      ...input,
-    } as Group;
-    this.store.groups.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Group, 'id'>>): Promise<Group | null> {
-    const existing = this.store.groups.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.groups.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.groups.delete(id);
-  }
-}
-
-class MemoryRulesetRepository implements RulesetRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Ruleset | null> {
-    return this.store.rulesets.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Ruleset[]> {
-    return [...this.store.rulesets.values()].filter((r) => r.groupId === groupId);
-  }
-
-  async create(input: InMemoryStoreShape['rulesets']): Promise<Ruleset> {
-    const row: Ruleset = {
-      tobiEnabled: false,
-      tobiPoint: null,
-      ...input,
-    } as Ruleset;
-    this.store.rulesets.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Ruleset, 'id'>>): Promise<Ruleset | null> {
-    const existing = this.store.rulesets.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.rulesets.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.rulesets.delete(id);
-  }
-}
-
-class MemoryGameRepository implements GameRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Game | null> {
-    return this.store.games.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.groupId === groupId);
-  }
-
-  async listByMatch(matchId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.matchId === matchId);
-  }
-
-  async listByLeague(leagueId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.leagueId === leagueId);
-  }
-
-  async create(input: InMemoryStoreShape['games']): Promise<Game> {
-    const row: Game = {
-      createdAt: new Date().toISOString(),
-      matchId: null,
-      leagueId: null,
-      ...input,
-    } as Game;
-    this.store.games.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Game, 'id'>>): Promise<Game | null> {
-    const existing = this.store.games.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.games.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.games.delete(id);
-  }
-}
+  .handler(async ({ data }) =>
+    deleteGroupHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );

@@ -57,16 +57,14 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { findOwnerById } from '../auth/ensure-owner';
-import { createDb } from '../db/client';
-import type { Invitation, NewInvitation } from '../db/schema';
+import type { Database } from '../db/client';
+import { DrizzleInvitationRepository } from '../repositories/drizzle';
 import type { InvitationRepository } from '../repositories/interfaces';
 import { InvitationInvalidError, type InvitationInvalidReason } from '../services/errors';
 import { InvitationService } from '../services/invitation-service';
-import {
-  type GroupServerStore,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-} from './groups-store';
+import { getRequestDb } from './context';
+import { getGroupServerStore } from './groups-store';
+import { MemoryInvitationRepository } from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Public-facing projection types
@@ -107,9 +105,10 @@ interface ServerDeps {
   repo: InvitationRepository;
 }
 
-const makeDeps = (): ServerDeps => {
-  const store = getGroupServerStore();
-  const repo = new MemoryInvitationRepository(store);
+const makeDeps = (db?: Database): ServerDeps => {
+  const repo = db
+    ? new DrizzleInvitationRepository(db)
+    : new MemoryInvitationRepository(getGroupServerStore());
   const service = new InvitationService(repo);
   return { service, repo };
 };
@@ -150,36 +149,25 @@ export interface InvitationAcceptHandlerDeps {
 // ---------------------------------------------------------------------------
 
 /**
- * Default issuer-email lookup. Reads from the in-memory store's `owners`
- * shape — except the store does not currently track owners as a Map (the
- * Owner row materialises in D1 via Better Auth's hook, not in this in-memory
- * fixture). For the in-memory dev path we fall back to the Owner id itself
- * as a stand-in: it is opaque, but it gives the screen *something* to render
- * during dev before D1 access lands (#39). Once #39 ships this function
- * grows a D1 read via {@link findOwnerById}.
+ * Default issuer-email lookup (Issue #39).
  *
- * Tests should override this via `deps.resolveIssuerEmail` so the projection
- * is deterministic regardless of which seam ends up live.
+ * With D1 reachable from the server function, we read the issuer's `owners`
+ * row directly via {@link findOwnerById}. The `owners` table is materialised
+ * by Better Auth's `user.create` / `session.create` hooks (see
+ * `auth/index.ts`), so an Owner who has issued an invitation always has a row.
+ *
+ * In the in-memory dev / test path (no `db`) there is no `owners` Map to walk,
+ * so we fall back to the Owner id itself as an opaque stand-in — enough for
+ * the screen to render *something* during dev. Tests override this via
+ * `deps.resolveIssuerEmail` for a deterministic projection.
  */
-const defaultResolveIssuerEmail = async (ownerId: string): Promise<string | null> => {
-  // Cheap path: if the seeded fixture happened to populate something we can
-  // surface, prefer that. The dev seed in `groups-store.ts` does not
-  // currently insert into `owners` — there is no `Map<string, Owner>` to
-  // walk — so for now we just return the ownerId as a placeholder string.
-  //
-  // The reason we don't try `findOwnerById(createDb(env.DB), ownerId)` here
-  // is that `env.DB` is not reachable from the TanStack Start server
-  // function context (#39). Once it is, replace this body with:
-  //
-  //   const owner = await findOwnerById(createDb(env.DB), ownerId);
-  //   return owner?.email ?? null;
-  //
-  // Static-reference both `createDb` and `findOwnerById` so the follow-up
-  // call site lands without an unused-import churn.
-  void createDb;
-  void findOwnerById;
-  return ownerId;
-};
+const makeDefaultResolveIssuerEmail =
+  (db?: Database) =>
+  async (ownerId: string): Promise<string | null> => {
+    if (!db) return ownerId;
+    const owner = await findOwnerById(db, ownerId);
+    return owner?.email ?? null;
+  };
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -199,15 +187,15 @@ const defaultResolveIssuerEmail = async (ownerId: string): Promise<string | null
 export const verifyInvitationHandler = async (
   input: VerifyInvitationInput,
   deps: InvitationAcceptHandlerDeps = {},
+  db?: Database,
 ): Promise<VerifyInvitationResult> => {
-  const { service } = makeDeps();
-  const resolveIssuerEmail = deps.resolveIssuerEmail ?? defaultResolveIssuerEmail;
+  const { service, repo } = makeDeps(db);
+  const resolveIssuerEmail = deps.resolveIssuerEmail ?? makeDefaultResolveIssuerEmail(db);
 
   // Inject `now` into the service per-call rather than re-instantiating it
   // with a custom dep — the service already owns the clock for expiry logic.
-  // We do this by reaching into the service's constructor seam:
   const serviceWithClock =
-    deps.now === undefined ? service : new InvitationService(makeDeps().repo, { now: deps.now });
+    deps.now === undefined ? service : new InvitationService(repo, { now: deps.now });
 
   try {
     const invitation = await serviceWithClock.verify(input.token);
@@ -244,8 +232,9 @@ export const verifyInvitationHandler = async (
 export const consumeInvitationHandler = async (
   input: ConsumeInvitationInput,
   deps: InvitationAcceptHandlerDeps = {},
+  db?: Database,
 ): Promise<{ consumed: true }> => {
-  const { repo } = makeDeps();
+  const { repo } = makeDeps(db);
   const service =
     deps.now === undefined
       ? new InvitationService(repo)
@@ -261,55 +250,8 @@ export const consumeInvitationHandler = async (
 
 export const verifyInvitationServerFn = createServerFn({ method: 'GET' })
   .inputValidator(verifyInvitationInput)
-  .handler(({ data }) => verifyInvitationHandler(data));
+  .handler(({ data }) => verifyInvitationHandler(data, {}, getRequestDb()));
 
 export const consumeInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(consumeInvitationInput)
-  .handler(({ data }) => consumeInvitationHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repository — duplicates `server/invitations.ts` to keep this
-// module self-contained. When D1 lands they collapse into one shared
-// `repositories/drizzle.ts` implementation.
-// ---------------------------------------------------------------------------
-
-class MemoryInvitationRepository implements InvitationRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Invitation | null> {
-    return this.store.invitations.get(id) ?? null;
-  }
-
-  async findByToken(token: string): Promise<Invitation | null> {
-    for (const row of this.store.invitations.values()) {
-      if (row.token === token) return row;
-    }
-    return null;
-  }
-
-  async listByIssuer(ownerId: string): Promise<Invitation[]> {
-    return [...this.store.invitations.values()].filter((i) => i.issuedByOwnerId === ownerId);
-  }
-
-  async create(input: InMemoryStoreShape['invitations']): Promise<Invitation> {
-    const row: Invitation = {
-      createdAt: new Date().toISOString(),
-      status: 'PENDING',
-      memo: null,
-      consumedAt: null,
-      consumedByUserId: null,
-      revokedAt: null,
-      ...input,
-    } as Invitation;
-    this.store.invitations.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<NewInvitation, 'id'>>): Promise<Invitation | null> {
-    const existing = this.store.invitations.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input } as Invitation;
-    this.store.invitations.set(id, next);
-    return next;
-  }
-}
+  .handler(({ data }) => consumeInvitationHandler(data, {}, getRequestDb()));

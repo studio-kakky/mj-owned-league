@@ -41,50 +41,86 @@ import type {
   MatchCreateLeagueOption,
   MatchCreateRulesetOption,
 } from '../components/matches';
-import type { Game, Match, NewMatch, Ruleset } from '../db/schema';
+import type { Database } from '../db/client';
+import type { Match, NewMatch } from '../db/schema';
+import {
+  DrizzleGameRepository,
+  DrizzleGroupRepository,
+  DrizzleLeagueRepository,
+  DrizzleMatchRepository,
+  DrizzlePlayerRepository,
+  DrizzleRulesetRepository,
+} from '../repositories/drizzle';
 import type {
-  GameRepository,
+  GroupRepository,
+  LeagueRepository,
   MatchRepository,
+  PlayerRepository,
   RulesetRepository,
 } from '../repositories/interfaces';
 import { MatchService } from '../services/match-service';
+import { getRequestDb, requireOwnerId } from './context';
+import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
 import {
-  type GroupServerStore,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-  seedDevDataIfEmpty,
-} from './groups-store';
+  MemoryGameRepository,
+  MemoryGroupRepository,
+  MemoryLeagueRepository,
+  MemoryMatchRepository,
+  MemoryPlayerRepository,
+  MemoryRulesetRepository,
+} from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Repository facade
 // ---------------------------------------------------------------------------
 
 interface ServerRepos {
-  store: GroupServerStore;
   service: MatchService;
+  groups: GroupRepository;
+  leagues: LeagueRepository;
   matches: MatchRepository;
   rulesets: RulesetRepository;
+  players: PlayerRepository;
 }
 
-const makeRepos = (): ServerRepos => {
-  const store = getGroupServerStore();
-  const matches = new MemoryMatchRepository(store);
-  const games = new MemoryGameRepository(store);
-  const rulesets = new MemoryRulesetRepository(store);
+const makeRepos = (db?: Database): ServerRepos => {
+  const built = db
+    ? {
+        groups: new DrizzleGroupRepository(db),
+        leagues: new DrizzleLeagueRepository(db),
+        matches: new DrizzleMatchRepository(db),
+        rulesets: new DrizzleRulesetRepository(db),
+        players: new DrizzlePlayerRepository(db),
+        games: new DrizzleGameRepository(db),
+      }
+    : (() => {
+        const store = getGroupServerStore();
+        return {
+          groups: new MemoryGroupRepository(store),
+          leagues: new MemoryLeagueRepository(store),
+          matches: new MemoryMatchRepository(store),
+          rulesets: new MemoryRulesetRepository(store),
+          players: new MemoryPlayerRepository(store),
+          games: new MemoryGameRepository(store),
+        };
+      })();
   return {
-    store,
-    matches,
-    rulesets,
-    service: new MatchService(matches, games),
+    service: new MatchService(built.matches, built.games),
+    groups: built.groups,
+    leagues: built.leagues,
+    matches: built.matches,
+    rulesets: built.rulesets,
+    players: built.players,
   };
 };
 
 // ---------------------------------------------------------------------------
 // Input validators
 // ---------------------------------------------------------------------------
+// `ownerId` is resolved server-side from the session, never accepted on the
+// wire; the `*Input` handler types add it back via `WithOwner`.
 
 const getContextInput = z.object({
-  ownerId: z.string().min(1),
   /**
    * Optional `?leagueId=` — when supplied the loader pins the screen to that
    * League. Validation only enforces the string shape; ownership / existence
@@ -101,7 +137,6 @@ const getContextInput = z.object({
 });
 
 const createMatchInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
   /**
    * `null` = League 外 Match. The handler additionally rejects a non-null
@@ -118,18 +153,25 @@ const createMatchInput = z.object({
   defaultRulesetId: z.string().min(1).nullable(),
 });
 
-export type GetMatchCreateContextInput = z.infer<typeof getContextInput>;
-export type CreateMatchInput = z.infer<typeof createMatchInput>;
+type WithOwner<T> = T & { ownerId: string };
+
+export type GetMatchCreateContextInput = WithOwner<z.infer<typeof getContextInput>>;
+export type CreateMatchInput = WithOwner<z.infer<typeof createMatchInput>>;
 
 /**
- * Returns the next `sequenceNumber` for a League. Exported for testing —
- * production callers go through {@link getMatchCreateContextHandler} or
+ * Returns the next `sequenceNumber` for a League: `max(existing) + 1`, or `1`
+ * when the League has no Matches. Takes a {@link MatchRepository} so it works
+ * against either the in-memory store or D1. Exported for testing — production
+ * callers go through {@link getMatchCreateContextHandler} or
  * {@link createMatchHandler}.
  */
-export const computeNextSequenceNumber = (store: GroupServerStore, leagueId: string): number => {
+export const computeNextSequenceNumber = async (
+  matches: MatchRepository,
+  leagueId: string,
+): Promise<number> => {
+  const existing = await matches.listByLeague(leagueId);
   let max = 0;
-  for (const m of store.matches.values()) {
-    if (m.leagueId !== leagueId) continue;
+  for (const m of existing) {
     if (m.sequenceNumber !== null && m.sequenceNumber > max) {
       max = m.sequenceNumber;
     }
@@ -158,14 +200,27 @@ export const computeNextSequenceNumber = (store: GroupServerStore, leagueId: str
  */
 export const getMatchCreateContextHandler = async (
   input: GetMatchCreateContextInput,
+  db?: Database,
 ): Promise<MatchCreateContext> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store } = makeRepos();
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const repos = makeRepos(db);
 
-  const ownedGroups = [...store.groups.values()]
-    .filter((g) => g.ownerId === input.ownerId)
-    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0));
-  const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
+  const ownedGroups = [...(await repos.groups.listByOwner(input.ownerId))].sort((a, b) =>
+    a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0,
+  );
+
+  // Gather Leagues / Rulesets / Players per owned Group through the
+  // repositories — works identically against the in-memory store and D1.
+  const perGroup = await Promise.all(
+    ownedGroups.map(async (group) => {
+      const [groupLeagues, groupRulesets, groupPlayers] = await Promise.all([
+        repos.leagues.listByGroup(group.id),
+        repos.rulesets.listByGroup(group.id),
+        repos.players.listByGroup(group.id),
+      ]);
+      return { group, groupLeagues, groupRulesets, groupPlayers };
+    }),
+  );
 
   const groups: ReadonlyArray<MatchCreateGroupOption> = ownedGroups.map((g) => ({
     id: g.id,
@@ -176,43 +231,39 @@ export const getMatchCreateContextHandler = async (
   // Leagues across every owned Group, tagged with `groupId` + `format` so the
   // screen can filter client-side and lock the format selector on League pick.
   const leagues: MatchCreateLeagueOption[] = [];
-  for (const league of store.leagues.values()) {
-    if (!ownedGroupIds.has(league.groupId)) continue;
-    leagues.push({
-      id: league.id,
-      groupId: league.groupId,
-      name: league.name,
-      format: league.format,
-      defaultRulesetId: league.defaultRulesetId,
-    });
+  for (const { groupLeagues } of perGroup) {
+    for (const league of groupLeagues) {
+      leagues.push({
+        id: league.id,
+        groupId: league.groupId,
+        name: league.name,
+        format: league.format,
+        defaultRulesetId: league.defaultRulesetId,
+      });
+    }
   }
 
   // Rulesets across every owned Group.
   const rulesets: MatchCreateRulesetOption[] = [];
-  for (const ruleset of store.rulesets.values()) {
-    if (!ownedGroupIds.has(ruleset.groupId)) continue;
-    const group = store.groups.get(ruleset.groupId);
-    rulesets.push({
-      id: ruleset.id,
-      groupId: ruleset.groupId,
-      name: ruleset.name,
-      startingScore: ruleset.startingScore,
-      returnScore: ruleset.returnScore,
-      umaPattern: ruleset.umaPattern,
-      isGroupDefault: group?.defaultRulesetId === ruleset.id,
-    });
+  for (const { group, groupRulesets } of perGroup) {
+    for (const ruleset of groupRulesets) {
+      rulesets.push({
+        id: ruleset.id,
+        groupId: ruleset.groupId,
+        name: ruleset.name,
+        startingScore: ruleset.startingScore,
+        returnScore: ruleset.returnScore,
+        umaPattern: ruleset.umaPattern,
+        isGroupDefault: group.defaultRulesetId === ruleset.id,
+      });
+    }
   }
 
   // Active-Player counts per Group. We pre-aggregate here so the screen can
   // gate 3-player Match creation without a second round trip.
   const activePlayerCountByGroup: Record<string, number> = {};
-  for (const group of ownedGroups) {
-    activePlayerCountByGroup[group.id] = 0;
-  }
-  for (const player of store.players.values()) {
-    if (!ownedGroupIds.has(player.groupId)) continue;
-    if (!player.isActive) continue;
-    activePlayerCountByGroup[player.groupId] = (activePlayerCountByGroup[player.groupId] ?? 0) + 1;
+  for (const { group, groupPlayers } of perGroup) {
+    activePlayerCountByGroup[group.id] = groupPlayers.filter((p) => p.isActive).length;
   }
 
   // Resolve the initial Group / League. A foreign / stale `?leagueId=` is
@@ -221,12 +272,14 @@ export const getMatchCreateContextHandler = async (
   let initialGroupId: string | null = null;
   let initialSequenceNumber: number | null = null;
 
+  const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
+
   if (input.leagueId !== undefined) {
     const candidate = leagues.find((l) => l.id === input.leagueId);
     if (candidate !== undefined) {
       initialLeagueId = candidate.id;
       initialGroupId = candidate.groupId;
-      initialSequenceNumber = computeNextSequenceNumber(store, candidate.id);
+      initialSequenceNumber = await computeNextSequenceNumber(repos.matches, candidate.id);
     }
   }
 
@@ -265,11 +318,14 @@ export const getMatchCreateContextHandler = async (
  * same number — within the limits of an in-memory store; under D1 the same
  * read-then-insert pair will run inside a transaction (tracked with #39).
  */
-export const createMatchHandler = async (input: CreateMatchInput): Promise<CreatedMatchSummary> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const { store, service } = makeRepos();
+export const createMatchHandler = async (
+  input: CreateMatchInput,
+  db?: Database,
+): Promise<CreatedMatchSummary> => {
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const { groups, leagues, rulesets, matches, service } = makeRepos(db);
 
-  const group = store.groups.get(input.groupId);
+  const group = await groups.findById(input.groupId);
   if (!group || group.ownerId !== input.ownerId) {
     throw new Error('Group not found or not owned by caller.');
   }
@@ -277,16 +333,16 @@ export const createMatchHandler = async (input: CreateMatchInput): Promise<Creat
   let leagueId: string | null = null;
   let sequenceNumber: number | null = null;
   if (input.leagueId !== null) {
-    const league = store.leagues.get(input.leagueId);
+    const league = await leagues.findById(input.leagueId);
     if (!league || league.groupId !== group.id) {
       throw new Error('League not found in the selected Group.');
     }
     leagueId = league.id;
-    sequenceNumber = computeNextSequenceNumber(store, league.id);
+    sequenceNumber = await computeNextSequenceNumber(matches, league.id);
   }
 
   if (input.defaultRulesetId !== null) {
-    const ruleset = store.rulesets.get(input.defaultRulesetId);
+    const ruleset = await rulesets.findById(input.defaultRulesetId);
     if (!ruleset || ruleset.groupId !== group.id) {
       throw new Error('Ruleset not found in the selected Group.');
     }
@@ -319,134 +375,12 @@ export const createMatchHandler = async (input: CreateMatchInput): Promise<Creat
 
 export const getMatchCreateContextServerFn = createServerFn({ method: 'GET' })
   .inputValidator(getContextInput)
-  .handler(({ data }) => getMatchCreateContextHandler(data));
+  .handler(async ({ data }) =>
+    getMatchCreateContextHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
 
 export const createMatchServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createMatchInput)
-  .handler(({ data }) => createMatchHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repositories
-// ---------------------------------------------------------------------------
-// Same pattern as `server/leagues.ts`. Kept private to this module — when
-// the D1 binding lands (#39) the constructor calls in `makeRepos` are the
-// only edits.
-
-class MemoryMatchRepository implements MatchRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Match | null> {
-    return this.store.matches.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Match[]> {
-    return [...this.store.matches.values()].filter((m) => m.groupId === groupId);
-  }
-
-  async listByLeague(leagueId: string): Promise<Match[]> {
-    return [...this.store.matches.values()].filter((m) => m.leagueId === leagueId);
-  }
-
-  async create(input: InMemoryStoreShape['matches']): Promise<Match> {
-    const row: Match = {
-      createdAt: new Date().toISOString(),
-      heldAt: null,
-      memo: null,
-      sequenceNumber: null,
-      defaultRulesetId: null,
-      leagueId: null,
-      ...input,
-    } as Match;
-    this.store.matches.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Match, 'id'>>): Promise<Match | null> {
-    const existing = this.store.matches.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.matches.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.matches.delete(id);
-  }
-}
-
-class MemoryGameRepository implements GameRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Game | null> {
-    return this.store.games.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.groupId === groupId);
-  }
-
-  async listByMatch(matchId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.matchId === matchId);
-  }
-
-  async listByLeague(leagueId: string): Promise<Game[]> {
-    return [...this.store.games.values()].filter((g) => g.leagueId === leagueId);
-  }
-
-  async create(input: InMemoryStoreShape['games']): Promise<Game> {
-    const row: Game = {
-      createdAt: new Date().toISOString(),
-      matchId: null,
-      leagueId: null,
-      ...input,
-    } as Game;
-    this.store.games.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Game, 'id'>>): Promise<Game | null> {
-    const existing = this.store.games.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.games.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.games.delete(id);
-  }
-}
-
-class MemoryRulesetRepository implements RulesetRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Ruleset | null> {
-    return this.store.rulesets.get(id) ?? null;
-  }
-
-  async listByGroup(groupId: string): Promise<Ruleset[]> {
-    return [...this.store.rulesets.values()].filter((r) => r.groupId === groupId);
-  }
-
-  async create(input: InMemoryStoreShape['rulesets']): Promise<Ruleset> {
-    const row: Ruleset = {
-      tobiEnabled: false,
-      tobiPoint: null,
-      ...input,
-    } as Ruleset;
-    this.store.rulesets.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<Ruleset, 'id'>>): Promise<Ruleset | null> {
-    const existing = this.store.rulesets.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input };
-    this.store.rulesets.set(id, next);
-    return next;
-  }
-
-  async delete(id: string): Promise<boolean> {
-    return this.store.rulesets.delete(id);
-  }
-}
+  .handler(async ({ data }) =>
+    createMatchHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );
