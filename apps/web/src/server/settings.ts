@@ -14,17 +14,16 @@
  *     server function (#39) the `makeRepos` factory below is the only thing
  *     that needs to change.
  *
- * Active-group resolution:
- *   `getSettings` accepts only `ownerId` from the client. The server picks
- *   the Owner's most-recently-created Group (deterministic ordering on
- *   `createdAt`) as the active Group. This is a deliberate interim choice —
- *   the GroupSwitcher (Issue #11) does not yet feed an `activeGroupId` into
- *   any route loader. When that wiring lands, the client will start passing
- *   `activeGroupId` and the server will fall back to the owner's first group
- *   only when none is supplied. All mutation handlers cross-check that the
- *   target Ruleset / Player belongs to a Group owned by the caller, so the
- *   "first group" choice is purely about defaulting; it never grants extra
- *   access.
+ * Group scoping (Issue #62):
+ *   `getSettings` requires a `groupId` — it always comes from the URL path
+ *   (`/groups/:groupId/settings`). There is no cross-Group fallback: the
+ *   "first owned Group" default and the optional `?groupId=` query that used
+ *   to live here are both gone. A foreign / unknown id resolves to `null`
+ *   (the route redirects to `/groups`, the selection screen). All mutation
+ *   handlers cross-check that the target Ruleset / Player belongs to a Group
+ *   owned by the caller via {@link assertGroupOwnedBy}, so ownership is the
+ *   server's responsibility even though the UI only links to the Owner's own
+ *   Groups.
  *
  * `hasGameHistory` for Players:
  *   The interim in-memory store does not yet model GameResult rows (Game is
@@ -121,17 +120,12 @@ const makeRepos = (db?: Database): ServerRepos => {
 // still take it explicitly.
 const settingsInput = z.object({
   /**
-   * Optional Group selector. When supplied (and owned by the caller), the
-   * loader builds the Settings payload for that Group instead of the
-   * Owner's first Group. Foreign / unknown ids silently fall through to
-   * the default selection — same convention as the other list handlers.
-   *
-   * Surfaced so screens like S6 Group 詳細 can deep-link to the matching
-   * Group's Settings via `/settings?groupId=…`. Once the GroupSwitcher
-   * (Issue #11) exposes the active group through the layout we can promote
-   * this to the canonical input.
+   * The Group whose Settings to load. Required — it always comes from the
+   * URL path at `/groups/:groupId/settings`, so there is no cross-Group
+   * fallback. A foreign / unknown id resolves to `null` (the route
+   * redirects to `/groups`).
    */
-  groupId: z.string().min(1).optional(),
+  groupId: z.string().min(1),
 });
 
 const rulesetFormSchema = z.object({
@@ -242,36 +236,36 @@ const rethrowDomainError = (cause: unknown): never => {
 // ---------------------------------------------------------------------------
 
 /**
- * Builds the {@link SettingsData} payload for a single Owner.
+ * Builds the {@link SettingsData} payload for one Group
+ * (`/groups/:groupId/settings`, Issue #62).
+ *
+ * The `groupId` is required and comes from the URL path; there is no
+ * cross-Group fallback. Returns `null` when the Group does not exist or is
+ * owned by a different Owner — the route surfaces that as a redirect to
+ * `/groups`. Ownership is the server's responsibility: we never trust the
+ * path `groupId` on the wire even though the UI only links to the Owner's own
+ * Groups.
  *
  * Step-by-step:
  *   1. Materialise the dev seed (shared with /groups and /).
- *   2. Pick the Owner's first Group (createdAt ascending) as active. Surface
- *      `group: null` when the Owner has none.
- *   3. List the active Group's Rulesets and Players via the repository
- *      interfaces, then project each into the screen's shape.
+ *   2. Resolve + ownership-check the requested Group; bail with `null` on a
+ *      foreign / unknown id.
+ *   3. List the Group's Rulesets and Players via the repository interfaces,
+ *      then project each into the screen's shape.
  */
 export const getSettingsHandler = async (
   input: SettingsInput,
   db?: Database,
-): Promise<SettingsData> => {
+): Promise<SettingsData | null> => {
   if (!db) seedDevDataIfEmpty(input.ownerId);
 
   const { groups, rulesets, players } = makeRepos(db);
 
-  const ownedGroups = [...(await groups.listByOwner(input.ownerId))].sort((a, b) =>
-    a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0,
-  );
+  // Ownership guard: the Group must exist and belong to the caller. A foreign
+  // / unknown id resolves to `null` (the route redirects to `/groups`).
+  const active = await groups.findById(input.groupId);
+  if (active === null || active.ownerId !== input.ownerId) return null;
 
-  if (ownedGroups.length === 0) {
-    return { group: null, rulesets: [], players: [] };
-  }
-
-  // Honour the caller's `groupId` selection when present and owned;
-  // otherwise default to the first owned Group.
-  const requested =
-    input.groupId !== undefined ? ownedGroups.find((g) => g.id === input.groupId) : undefined;
-  const active = (requested ?? ownedGroups[0]) as Group;
   const groupSummary: SettingsGroupSummary = {
     id: active.id,
     name: active.name,

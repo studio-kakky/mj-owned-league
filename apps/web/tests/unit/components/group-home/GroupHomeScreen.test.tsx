@@ -131,16 +131,16 @@ describe('GroupHomeScreen', () => {
     expect(screen.getByTestId('group-home-summary-last-played')).toHaveTextContent('未対局');
   });
 
-  it('links Player 管理 / Ruleset 管理 to /settings with the matching groupId', () => {
+  it('links Player 管理 / Ruleset 管理 to /groups/$groupId/settings with the matching groupId', () => {
     render(<GroupHomeScreen data={baseData} />);
 
     const playersLink = screen.getByTestId('group-home-settings-players-link');
-    expect(playersLink).toHaveAttribute('href', '/settings');
-    expect(playersLink.getAttribute('data-search')).toBe(JSON.stringify({ groupId: 'g1' }));
+    expect(playersLink).toHaveAttribute('href', '/groups/$groupId/settings');
+    expect(playersLink.getAttribute('data-params')).toBe(JSON.stringify({ groupId: 'g1' }));
 
     const rulesetsLink = screen.getByTestId('group-home-settings-rulesets-link');
-    expect(rulesetsLink).toHaveAttribute('href', '/settings');
-    expect(rulesetsLink.getAttribute('data-search')).toBe(JSON.stringify({ groupId: 'g1' }));
+    expect(rulesetsLink).toHaveAttribute('href', '/groups/$groupId/settings');
+    expect(rulesetsLink.getAttribute('data-params')).toBe(JSON.stringify({ groupId: 'g1' }));
   });
 
   it('renders the leagues section with a "もっと見る" link to /leagues?groupId=…', () => {

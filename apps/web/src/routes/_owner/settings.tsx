@@ -1,158 +1,30 @@
 /**
- * `/settings` — S16 Settings (Ruleset / Player 管理) (`04-screens.md` § S16,
- * Issue #17).
+ * `/settings` — legacy redirect (Issue #62).
  *
- * Wiring strategy mirrors `/groups` and `/`:
- *   - The loader is the only place that crosses the TanStack Start RPC
- *     boundary. It pulls the active-group-scoped Settings payload via
- *     `getSettingsServerFn`.
- *   - The screen component (`SettingsScreen`) takes the payload + action
- *     callbacks as props and emits no service calls of its own.
- *   - Every mutation calls `router.invalidate()` after success so the loader
- *     re-fetches and the lists reflect the new state. This is the same
- *     pattern used by `/groups`.
+ * The Settings screen used to live here, scoped to the Owner's "first" Group.
+ * Issue #62 moved it under the Group namespace (`/groups/:groupId/settings`,
+ * S16) so it shares a namespace with the Group's S6 ホーム and the per-Group
+ * League (S15) / Match (S9) screens, and dropped the implicit first-group
+ * fallback. This stub keeps old links / bookmarks alive by bouncing them to
+ * the active Group's Settings — or to `/groups` (the selection screen) when no
+ * Group is active.
  *
- * Active group resolution:
- *   The server picks the Owner's first Group as the active context (see
- *   `server/settings.ts` for the rationale). When the GroupSwitcher (Issue
- *   #11) starts surfacing a selected group via the layout, we will plumb
- *   that id into the loader's input — the server function already accepts
- *   the substitution by virtue of validating both `groupId` arguments on
- *   mutations and re-deriving the active group on read.
+ * The active Group comes from the `_owner` layout's route context (resolved in
+ * its `beforeLoad`), so the redirect needs no round trip of its own. Mirrors
+ * the `/leagues` and `/matches` legacy stubs.
  */
 
-import { createFileRoute, useRouter } from '@tanstack/react-router';
-import { useCallback } from 'react';
-import { z } from 'zod';
-import type { RulesetFormInput } from '../../components/settings';
-import { SettingsScreen } from '../../components/settings';
-import {
-  createPlayerServerFn,
-  createRulesetServerFn,
-  deactivatePlayerServerFn,
-  deletePlayerServerFn,
-  deleteRulesetServerFn,
-  getSettingsServerFn,
-  reactivatePlayerServerFn,
-  renamePlayerServerFn,
-  setDefaultRulesetServerFn,
-  updateRulesetServerFn,
-} from '../../server/settings';
-
-// Optional `?groupId=` lets callers (S6 Group 詳細 link) deep-link to "the
-// Settings of that Group" without having to flip the global active-group
-// picker. The server handler silently falls back to the Owner's first
-// Group when the id is foreign / stale.
-const searchSchema = z.object({
-  groupId: z.string().min(1).optional(),
-});
-
-const SettingsPage = () => {
-  const router = useRouter();
-  const { data } = Route.useLoaderData();
-
-  // `groupId` is captured at the top so all action callbacks can close over
-  // it. When the active group is `null` (Owner has no Groups yet) every
-  // mutation is a no-op; the SettingsScreen disables every write affordance
-  // in that branch but we guard here as a defence-in-depth.
-  const groupId = data.group?.id ?? null;
-
-  const handleCreateRuleset = useCallback(
-    async (input: RulesetFormInput) => {
-      if (groupId === null) return;
-      await createRulesetServerFn({ data: { groupId, input } });
-      await router.invalidate();
-    },
-    [groupId, router],
-  );
-
-  const handleUpdateRuleset = useCallback(
-    async (rulesetId: string, input: RulesetFormInput) => {
-      await updateRulesetServerFn({ data: { rulesetId, input } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleDeleteRuleset = useCallback(
-    async (rulesetId: string) => {
-      await deleteRulesetServerFn({ data: { rulesetId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleSetDefaultRuleset = useCallback(
-    async (rulesetId: string) => {
-      await setDefaultRulesetServerFn({ data: { rulesetId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleCreatePlayer = useCallback(
-    async (name: string) => {
-      if (groupId === null) return;
-      await createPlayerServerFn({ data: { groupId, name } });
-      await router.invalidate();
-    },
-    [groupId, router],
-  );
-
-  const handleRenamePlayer = useCallback(
-    async (playerId: string, name: string) => {
-      await renamePlayerServerFn({ data: { playerId, name } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleDeletePlayer = useCallback(
-    async (playerId: string) => {
-      await deletePlayerServerFn({ data: { playerId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleDeactivatePlayer = useCallback(
-    async (playerId: string) => {
-      await deactivatePlayerServerFn({ data: { playerId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleReactivatePlayer = useCallback(
-    async (playerId: string) => {
-      await reactivatePlayerServerFn({ data: { playerId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  return (
-    <SettingsScreen
-      data={data}
-      onCreateRuleset={handleCreateRuleset}
-      onUpdateRuleset={handleUpdateRuleset}
-      onDeleteRuleset={handleDeleteRuleset}
-      onSetDefaultRuleset={handleSetDefaultRuleset}
-      onCreatePlayer={handleCreatePlayer}
-      onRenamePlayer={handleRenamePlayer}
-      onDeletePlayer={handleDeletePlayer}
-      onDeactivatePlayer={handleDeactivatePlayer}
-      onReactivatePlayer={handleReactivatePlayer}
-    />
-  );
-};
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_owner/settings')({
-  validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ groupId: search.groupId }),
-  loader: async ({ deps }) => {
-    const data = await getSettingsServerFn({ data: { groupId: deps.groupId } });
-    return { data };
+  beforeLoad: ({ context }) => {
+    const activeGroup = context.activeGroup;
+    if (activeGroup === null) {
+      throw redirect({ to: '/groups' });
+    }
+    throw redirect({
+      to: '/groups/$groupId/settings',
+      params: { groupId: activeGroup.id },
+    });
   },
-  component: SettingsPage,
 });

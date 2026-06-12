@@ -49,12 +49,6 @@ const data: SettingsData = {
   players: [playerActive, playerWithHistory],
 };
 
-const emptyData: SettingsData = {
-  group: null,
-  rulesets: [],
-  players: [],
-};
-
 const noopHandlers = {
   onCreateRuleset: () => {},
   onUpdateRuleset: () => {},
@@ -68,12 +62,6 @@ const noopHandlers = {
 };
 
 describe('SettingsScreen', () => {
-  it('renders the no-group empty state when data.group is null', () => {
-    render(<SettingsScreen data={emptyData} {...noopHandlers} />);
-    expect(screen.getByTestId('settings-no-group-state')).toBeInTheDocument();
-    expect(screen.queryByTestId('settings-tabs')).not.toBeInTheDocument();
-  });
-
   it('renders the active group name in the header', () => {
     render(<SettingsScreen data={data} {...noopHandlers} />);
     expect(screen.getByTestId('settings-active-group-name')).toHaveTextContent('金曜定例会');
