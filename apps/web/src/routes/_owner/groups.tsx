@@ -30,9 +30,10 @@
  *   mutations and via `loaderDeps` for the loader.
  */
 
-import { createFileRoute, useRouter } from '@tanstack/react-router';
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { GroupsScreen } from '../../components/groups';
+import { setActiveGroupServerFn } from '../../server/active-group';
 import {
   createGroupServerFn,
   deleteGroupServerFn,
@@ -42,7 +43,22 @@ import {
 
 const GroupsPage = () => {
   const router = useRouter();
+  const navigate = useNavigate();
   const { items } = Route.useLoaderData();
+
+  const handleSelect = useCallback(
+    async (groupId: string) => {
+      const result = await setActiveGroupServerFn({ data: { groupId } });
+      if (!result.ok) {
+        // Stale id (deleted / not ours). Refresh the list rather than
+        // navigating to a Group that no longer resolves.
+        await router.invalidate();
+        return;
+      }
+      await navigate({ to: '/groups/$groupId', params: { groupId } });
+    },
+    [navigate, router],
+  );
 
   const handleCreate = useCallback(
     async (name: string) => {
@@ -71,6 +87,7 @@ const GroupsPage = () => {
   return (
     <GroupsScreen
       groups={items}
+      onSelectGroup={handleSelect}
       onCreateGroup={handleCreate}
       onRenameGroup={handleRename}
       onDeleteGroup={handleDelete}

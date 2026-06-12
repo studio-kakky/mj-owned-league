@@ -1,44 +1,33 @@
 /**
- * `/` — S3 Owner ダッシュボード (`04-screens.md` § S3, Issue #14).
+ * `/` — landing redirect to the group-selection screen (Issue #58).
  *
- * Wiring strategy mirrors `/groups` (Issue #15): the route loader is the only
- * place that crosses the TanStack Start RPC boundary. The presentational
- * {@link DashboardScreen} takes the already-projected payload as a prop and
- * never imports the server function directly.
+ * Before Issue #58 this route rendered the cross-group S3 dashboard
+ * (`DashboardScreen` + `getDashboardServerFn`). The post-login flow has since
+ * changed to "ログイン → グループ選択 (`/groups`) → 選択グループの S6 ホーム",
+ * so `/` no longer has a screen of its own — it is purely a redirect to
+ * `/groups`.
  *
- *   - `getDashboardServerFn` → route `loader`. Reads the Owner-scoped
- *     `DashboardData` (groups, active leagues / matches, recent games,
- *     pending invitation count). Issue #14 only needs reads; no mutations
- *     happen on this screen — every edit affordance is a link to the
- *     destination screen (S4 / S15 / S9 / S14).
+ * Why a redirect (not a render):
+ *   `/groups` is the single landing surface. Funnelling `/` into it means there
+ *   is one place that handles "Owner just arrived" — including the brand-new
+ *   Owner with zero groups, whom `/groups` receives safely with its empty
+ *   state. A new dashboard is intentionally *not* built; the per-group S6
+ *   ホーム (`/groups/$groupId`) is the dashboard once a Group is selected.
  *
- * Owner identity (`ownerId`) comes from the parent `_owner` layout's
- * `beforeLoad`, which we surface via `Route.useRouteContext()` for the
- * loader and projection.
+ * Why `beforeLoad` (not the `loader`):
+ *   The redirect must fire before any data fetch. `_owner`'s `beforeLoad`
+ *   (the parent layout) has already gated authentication, so by the time this
+ *   runs the caller is a signed-in Owner; we just forward them on.
  *
- * Loader-side aggregation:
- *   The S3 spec lists four data sources (Groups / Leagues / Matches /
- *   Invitations + the recent-games feed). We do not split these into
- *   parallel loaders — TanStack Start loaders run serially in a single
- *   round-trip, and the server function aggregates everything from the
- *   shared in-memory store in O(n) over a handful of Maps. When the D1
- *   binding lands (#39) the same handler will fan out into four scoped
- *   queries; the call signature on the client stays unchanged.
+ * The previous dashboard plumbing (`DashboardScreen` / `getDashboardServerFn`)
+ * is intentionally left in the tree but unreferenced — deleting it is out of
+ * scope for this issue.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
-import { DashboardScreen } from '../../components/dashboard';
-import { getDashboardServerFn } from '../../server/dashboard';
-
-const OwnerDashboardPage = () => {
-  const { data } = Route.useLoaderData();
-  return <DashboardScreen data={data} />;
-};
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_owner/')({
-  loader: async () => {
-    const data = await getDashboardServerFn();
-    return { data };
+  beforeLoad: () => {
+    throw redirect({ to: '/groups' });
   },
-  component: OwnerDashboardPage,
 });

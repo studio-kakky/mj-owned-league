@@ -46,8 +46,10 @@ import type {
   NewInvitation,
   NewLeague,
   NewMatch,
+  NewOwner,
   NewPlayer,
   NewRuleset,
+  Owner,
   Player,
   Ruleset,
 } from '../db/schema';
@@ -64,6 +66,7 @@ import {
  * implementations.
  */
 export interface InMemoryStoreShape {
+  owners: NewOwner;
   groups: NewGroup;
   rulesets: NewRuleset;
   games: NewGame;
@@ -75,6 +78,14 @@ export interface InMemoryStoreShape {
 }
 
 export interface GroupServerStore {
+  /**
+   * Owner rows. The in-memory path never had these before — Owner identity
+   * came from the session and was never *read back* server-side. Issue #58
+   * introduces the first per-Owner column (`activeGroupId`) that the server
+   * functions need to read/write, so the dev / test store now carries owners
+   * too. Materialised lazily by `seedDevDataIfEmpty` (one row per seeded owner).
+   */
+  owners: Map<string, Owner>;
   groups: Map<string, Group>;
   rulesets: Map<string, Ruleset>;
   games: Map<string, Game>;
@@ -107,6 +118,7 @@ interface GlobalWithStore {
 
 const createEmptyStore = (): GroupServerStore => {
   return {
+    owners: new Map(),
     groups: new Map(),
     rulesets: new Map(),
     games: new Map(),
@@ -156,6 +168,26 @@ export const resetGroupServerStoreForTests = (): void => {
  */
 export const seedDevDataIfEmpty = (ownerId: string): void => {
   const store = getGroupServerStore();
+
+  const now = new Date().toISOString();
+
+  // Materialise the Owner row so the active-group server functions have
+  // something to read/write in dev. This is intentionally *outside* the
+  // `seededOwnerIds` / `owned.length` guards below: the active-group handlers
+  // can call `seedDevDataIfEmpty` after groups already exist (e.g. a group was
+  // created first), and they still need the Owner row to read/write
+  // `activeGroupId`. Creating it is idempotent (`has` guard), so it is safe to
+  // run on every call. `activeGroupId` starts null — the Owner has not picked
+  // a Group yet; the `/groups` selection flow sets it.
+  if (!store.owners.has(ownerId)) {
+    store.owners.set(ownerId, {
+      id: ownerId,
+      email: `${ownerId}@dev.local`,
+      activeGroupId: null,
+      createdAt: now,
+    });
+  }
+
   if (store.seededOwnerIds.has(ownerId)) return;
   store.seededOwnerIds.add(ownerId);
 
@@ -164,8 +196,6 @@ export const seedDevDataIfEmpty = (ownerId: string): void => {
   // proofing for when this swaps to D1), we don't double-seed.
   const owned = [...store.groups.values()].filter((g) => g.ownerId === ownerId);
   if (owned.length > 0) return;
-
-  const now = new Date().toISOString();
 
   // Group with history: "金曜定例会" + one persisted Game so hasHistory = true.
   const g1Id = `dev-${ownerId}-friday`;

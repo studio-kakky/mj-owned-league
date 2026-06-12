@@ -1,0 +1,1 @@
+ALTER TABLE `owners` ADD `active_group_id` text REFERENCES groups(id);

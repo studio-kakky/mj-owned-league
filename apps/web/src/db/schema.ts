@@ -88,6 +88,21 @@ export type NewPingCheck = typeof pingChecks.$inferInsert;
 export const owners = sqliteTable('owners', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
+  // The Owner's currently-selected ("active") Group. Persisting it on the
+  // Owner row (rather than in a cookie / client store) means the choice
+  // survives logout, new devices, and the post-login redirect — the Owner
+  // lands on the same Group they last used.
+  //
+  // Forward reference: `owners` is declared *before* `groups` (Group → Owner
+  // is the natural ownership direction), so a typed `.references(() =>
+  // groups.id)` here would dereference `groups` before it exists. We break
+  // the cycle the same way `groups.defaultRulesetId` does — declare it with
+  // an `AnySQLiteColumn` thunk so the table initialiser still closes over a
+  // live reference. `onDelete: 'set null'` means deleting the active Group
+  // automatically clears the pointer back to "no selection".
+  activeGroupId: text('active_group_id').references((): AnySQLiteColumn => groups.id, {
+    onDelete: 'set null',
+  }),
   createdAt: text('created_at').notNull().default(sql`(CURRENT_TIMESTAMP)`),
 });
 

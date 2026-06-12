@@ -27,9 +27,9 @@ sidebar_position: 3
 |---|---|
 | `/login` | ログイン |
 | `/invitations/accept/:token` | 招待受け入れ（新規アカウント作成 / 認証不要） |
-| `/` | Owner ダッシュボード（ログイン後トップ） |
+| `/` | `/groups`（グループ選択）へリダイレクト。横断ダッシュボード S3 は未参照化（Issue #58） |
 | `/invitations` | 招待管理 |
-| `/groups` | 自分の Group 一覧 |
+| `/groups` | 自分の Group 一覧 / ログイン後トップ（グループ選択）。選択でアクティブグループを保存し S6 ホームへ遷移 |
 | `/groups/:groupId` | Group 詳細（Player 管理、Ruleset 管理、通算成績） |
 | `/leagues/:leagueId` | League ダッシュボード |
 | `/matches/:matchId` | Match ダッシュボード |
