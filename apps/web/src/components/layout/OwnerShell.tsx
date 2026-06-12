@@ -37,6 +37,13 @@ export interface OwnerShellProps {
   groups: ReadonlyArray<GroupSummary> | null;
   /** Called when the user picks a group from the sheet. */
   onSelectGroup: (groupId: string) => void;
+  /**
+   * Whether to render the 4-tab bottom nav. The nav links to group-scoped
+   * destinations (ホーム / リーグ / マッチ / 設定), so it is hidden on the
+   * group-selection screen (`/groups`) — where no group is active yet — and
+   * shown once the user has entered a group. Defaults to `true`.
+   */
+  showBottomNav?: boolean;
   children: ReactNode;
 }
 
@@ -45,6 +52,7 @@ export const OwnerShell = ({
   activeGroup,
   groups,
   onSelectGroup,
+  showBottomNav = true,
   children,
 }: OwnerShellProps) => {
   const [isSheetOpen, setSheetOpen] = useState(false);
@@ -57,12 +65,18 @@ export const OwnerShell = ({
         onOpenGroupSwitcher={() => setSheetOpen(true)}
       />
 
-      {/* Reserve space for the fixed bottom nav. Horizontal padding is owned
-          here for legacy screens (S3); the redesigned full-bleed screens
-          (S4 一覧 / S6 グループホーム) break out with `-mx-4`. */}
-      <main className="mx-auto max-w-3xl px-4 pb-24 pt-4">{children}</main>
+      {/* Reserve clearance for the fixed bottom nav only when it is shown;
+          the selection screen drops it back to a normal bottom gap.
+          Horizontal padding is owned here for legacy screens (S3); the
+          redesigned full-bleed screens (S4 一覧 / S6 グループホーム) break out
+          with `-mx-4`. */}
+      <main className={`mx-auto max-w-3xl px-4 pt-4 ${showBottomNav ? 'pb-24' : 'pb-8'}`}>
+        {children}
+      </main>
 
-      <OwnerBottomNav />
+      {showBottomNav ? (
+        <OwnerBottomNav homeTo={activeGroup ? `/groups/${activeGroup.id}` : '/groups'} />
+      ) : null}
 
       <GroupSwitcherSheet
         open={isSheetOpen}

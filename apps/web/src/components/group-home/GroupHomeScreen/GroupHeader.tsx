@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router';
 import type { GroupHomeData } from '../types';
 import { formatDate } from './formatDate';
 import { SummaryPill } from './SummaryPill';
@@ -6,22 +5,11 @@ import { SummaryPill } from './SummaryPill';
 export const GroupHeader = ({ data }: { data: GroupHomeData }) => {
   return (
     <header className="px-5 pt-5" data-testid="group-home-header">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-[22px] font-semibold tracking-[-0.01em] text-[#FAFAF8]">
-            {data.name}
-          </h1>
-          <p className="mt-1 font-mono text-[11px] text-[#666666]">
-            作成 {formatDate(data.createdAt)}
-          </p>
-        </div>
-        <Link
-          to="/groups"
-          data-testid="group-home-back-link"
-          className="shrink-0 rounded-full border border-[#262626] px-3 py-1.5 text-xs text-[#FAFAF8] transition-colors hover:border-[#3a3a3a]"
-        >
-          一覧へ
-        </Link>
+      <div className="min-w-0">
+        <h1 className="truncate text-[22px] font-semibold tracking-[-0.01em] text-[#FAFAF8]">
+          {data.name}
+        </h1>
+        <p className="mt-1 font-mono text-[11px] text-[#666666]">作成 {formatDate(data.createdAt)}</p>
       </div>
       <dl
         data-testid="group-home-summary"

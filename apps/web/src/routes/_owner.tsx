@@ -33,7 +33,14 @@
  *   S6 ホーム, then invalidates so the header re-reads the new active group.
  */
 
-import { createFileRoute, Outlet, redirect, useNavigate, useRouter } from '@tanstack/react-router';
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { OwnerShell } from '../components/layout';
 import type { GroupSummary, OwnerSession } from '../components/layout/types';
@@ -45,6 +52,12 @@ const OwnerLayout = () => {
   const router = useRouter();
   const navigate = useNavigate();
   const { ownerSession, groups, activeGroup } = Route.useRouteContext();
+
+  // The bottom nav links to group-scoped destinations, so it is hidden on the
+  // group-selection screen (`/groups`) and shown once a group has been entered
+  // (`/groups/$groupId` and every other Owner page).
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const showBottomNav = pathname !== '/groups';
 
   const handleSelectGroup = useCallback(
     async (groupId: string) => {
@@ -69,6 +82,7 @@ const OwnerLayout = () => {
       activeGroup={activeGroup}
       groups={groups}
       onSelectGroup={handleSelectGroup}
+      showBottomNav={showBottomNav}
     >
       <Outlet />
     </OwnerShell>
