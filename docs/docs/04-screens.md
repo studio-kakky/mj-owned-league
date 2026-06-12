@@ -108,21 +108,21 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/leagues/:leagueId` |
+| パス | `/groups/:groupId/leagues/:leagueId` |
 | 表示要素 | League 名・形式・適用 Ruleset / 順位表 / Match 一覧 / 対局履歴 / 公開 URL |
 | 主な操作 | Match 作成 / 対局追加 / League 編集 / 公開 URL コピー |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=LeagueList.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=LeagueList.html |
-| 備考 | デザインは `LeagueList.html` に「League 一覧 (S7)」として 4 種類のフィルタ別カードと新規作成モーダルを含む。本ドキュメントの「S7 ダッシュボード」とは粒度差があるため、実装フェーズで一覧 / 詳細の分離を判断する。 |
+| 備考 | デザインは `LeagueList.html` に「League 一覧 (S7)」として 4 種類のフィルタ別カードと新規作成モーダルを含む。一覧は S15（`/groups/:groupId/leagues`）、詳細は本画面（`/groups/:groupId/leagues/:leagueId`）として分離済み（Issue #60）。旧 `/leagues`・`/leagues/:leagueId` はアクティブグループの一覧へリダイレクトする後方互換スタブ。 |
 
 ### S8. League 作成
 
 | 項目 | 内容 |
 |---|---|
 | パス | S15 内のモーダル（独立ページなし） |
-| 表示要素 | 名前 / 形式 / デフォルト Ruleset 選択 |
+| 表示要素 | 名前 / 形式 / デフォルト Ruleset 選択（Group はパスの `:groupId` に固定。ドロップダウンは当該 Group の単一選択肢に縮退） |
 | 主な操作 | 作成 |
-| 遷移先 | `/leagues/:leagueId` |
+| 遷移先 | `/groups/:groupId/leagues/:leagueId` |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=LeagueList.html （`create` モーダル） |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=LeagueList.html |
 
@@ -195,9 +195,9 @@ sidebar_position: 4
 | 項目 | 内容 |
 |---|---|
 | パス | `/groups/:groupId/leagues` |
-| 表示要素 | アクティブ Group 内の League カード一覧（フィルタ: すべて / 進行中 / 終了）/ 各 League のサマリ（形式・期間・参加人数・対局数） |
+| 表示要素 | パスの `:groupId` の Group 内 League カード一覧（フィルタ: すべて / 進行中 / 終了）/ 各 League のサマリ（形式・参加人数・対局数・最終対局日）。一覧が単一 Group にスコープされるためカードに Group ラベルは表示しない |
 | 主な操作 | League 作成（S8 モーダル）/ League 詳細（S7）への遷移 |
-| 備考 | Group 配下に複数 League がある場合の俯瞰画面。 |
+| 備考 | Group 配下に複数 League がある場合の俯瞰画面。`groupId` は URL パスを唯一の入力源とし、`?groupId=` クエリや横断フォールバックは持たない。他人 / 不明な `groupId` はサーバー側の所有権検証で弾き `/groups` へリダイレクト（Issue #60）。ボトムナビの「リーグ」はアクティブグループの本一覧（`/groups/:activeGroupId/leagues`）を指す。 |
 
 ### S16. Settings（プレイヤー / Ruleset 管理）
 
@@ -295,7 +295,8 @@ sidebar_position: 4
 |---|---|---|
 | `/` | Owner ダッシュボード | 要 |
 | `/login` | ログイン | 不要 |
-| `/groups`, `/groups/:groupId/leagues`, `/groups/:groupId/settings`, `/leagues`, `/matches`, `/invitations` | Owner 用各機能 | 要 |
+| `/groups`, `/groups/:groupId`, `/groups/:groupId/leagues`, `/groups/:groupId/leagues/:leagueId`, `/groups/:groupId/settings`, `/matches`, `/invitations` | Owner 用各機能（リーグ一覧 / 詳細は Group 配下に統一、Issue #60） | 要 |
+| `/leagues`, `/leagues/:leagueId` | 後方互換リダイレクト（アクティブグループの `/groups/:groupId/leagues` へ。アクティブグループ未選択時は `/groups` へ） | 要 |
 | `/invitations/accept/:token` | 招待受け入れ | 不要（トークン検証） |
 | `/l/:publicSlug` | League 公開ビュー | 不要 |
 | `/m/:publicSlug` | Match 公開ビュー（League 外） | 不要 |

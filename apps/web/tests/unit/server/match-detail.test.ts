@@ -14,13 +14,13 @@ import {
   getGroupServerStore,
   resetGroupServerStoreForTests,
 } from '../../../src/server/groups-store';
-import { listLeaguesHandler } from '../../../src/server/leagues';
 import {
   deleteGameHandler,
   getMatchDetailHandler,
   listMatchesHandler,
   submitGameHandler,
 } from '../../../src/server/match-detail';
+import { getMatchCreateContextHandler } from '../../../src/server/matches';
 
 const owner = 'owner-test-1';
 const otherOwner = 'owner-test-2';
@@ -32,7 +32,7 @@ beforeEach(() => {
 describe('getMatchDetailHandler', () => {
   it('returns the projected payload with ranking computed from GameResult', async () => {
     // Materialise the seed.
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -51,7 +51,7 @@ describe('getMatchDetailHandler', () => {
   });
 
   it('returns null for cross-owner matchId', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -63,7 +63,7 @@ describe('getMatchDetailHandler', () => {
 
 describe('listMatchesHandler', () => {
   it('lists every Match across the Owner s Groups when no leagueId is supplied', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const list = await listMatchesHandler({ ownerId: owner });
     expect(list.matches.length).toBeGreaterThan(0);
     expect(list.scope.leagueId).toBeNull();
@@ -71,7 +71,7 @@ describe('listMatchesHandler', () => {
   });
 
   it('filters to a single League when leagueId is supplied', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const target = seeded.leagues[0];
     if (!target) throw new Error('expected a seeded league');
 
@@ -82,7 +82,7 @@ describe('listMatchesHandler', () => {
 
   it('silently drops a foreign leagueId (falls back to the cross-Group list)', async () => {
     // Materialise the other owner first, so they have at least one League.
-    const other = await listLeaguesHandler({ ownerId: otherOwner });
+    const other = await getMatchCreateContextHandler({ ownerId: otherOwner });
     const foreign = other.leagues[0];
     if (!foreign) throw new Error('expected the other owner to have a league');
 
@@ -91,7 +91,7 @@ describe('listMatchesHandler', () => {
   });
 
   it('surfaces leagueOptions for the in-page リーグセレクタ (#22)', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const list = await listMatchesHandler({ ownerId: owner });
 
     // Every owned League surfaces — including those without matches yet.
@@ -103,8 +103,8 @@ describe('listMatchesHandler', () => {
   });
 
   it('does not leak foreign Leagues into leagueOptions (#22)', async () => {
-    await listLeaguesHandler({ ownerId: owner });
-    const otherSeed = await listLeaguesHandler({ ownerId: otherOwner });
+    await getMatchCreateContextHandler({ ownerId: owner });
+    const otherSeed = await getMatchCreateContextHandler({ ownerId: otherOwner });
     const foreignIds = new Set(otherSeed.leagues.map((l) => l.id));
 
     const list = await listMatchesHandler({ ownerId: owner });
@@ -114,7 +114,7 @@ describe('listMatchesHandler', () => {
 
 describe('submitGameHandler', () => {
   it('creates a new Game with GameResult rows and recomputes the Match ranking', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -160,7 +160,7 @@ describe('submitGameHandler', () => {
   });
 
   it('rejects raw score sums that do not match startingScore × players', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -186,7 +186,7 @@ describe('submitGameHandler', () => {
   });
 
   it('updates an existing Game (S12) and replaces its GameResult rows', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -219,7 +219,7 @@ describe('submitGameHandler', () => {
   });
 
   it('rejects cross-owner submissions', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -246,7 +246,7 @@ describe('submitGameHandler', () => {
 
 describe('deleteGameHandler', () => {
   it('removes the Game and its GameResult rows, then ranking goes empty', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -265,7 +265,7 @@ describe('deleteGameHandler', () => {
   });
 
   it('rejects cross-owner deletes', async () => {
-    await listLeaguesHandler({ ownerId: owner });
+    await getMatchCreateContextHandler({ ownerId: owner });
     const store = getGroupServerStore();
     const game = [...store.games.values()][0];
     if (!game) throw new Error('expected seeded game');
