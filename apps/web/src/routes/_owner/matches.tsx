@@ -41,10 +41,9 @@ const MatchesPage = () => {
 export const Route = createFileRoute('/_owner/matches')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
+  loader: async ({ deps }) => {
     const data = await listMatchesServerFn({
       data: {
-        ownerId: context.ownerSession.ownerId,
         leagueId: deps.leagueId,
         groupId: deps.groupId,
       },

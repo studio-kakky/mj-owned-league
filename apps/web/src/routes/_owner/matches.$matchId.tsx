@@ -26,23 +26,22 @@ import {
 
 const MatchDetailPage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
 
   const handleSubmitGame = useCallback(
     async (input: GameSubmitInput) => {
-      await submitGameServerFn({ data: bridgeGameSubmit(ownerSession.ownerId, input) });
+      await submitGameServerFn({ data: bridgeGameSubmit(input) });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleDeleteGame = useCallback(
     async (gameId: string) => {
-      await deleteGameServerFn({ data: { ownerId: ownerSession.ownerId, gameId } });
+      await deleteGameServerFn({ data: { gameId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   return (
@@ -55,9 +54,9 @@ const MatchDetailPage = () => {
 };
 
 export const Route = createFileRoute('/_owner/matches/$matchId')({
-  loader: async ({ context, params }) => {
+  loader: async ({ params }) => {
     const data = await getMatchDetailServerFn({
-      data: { ownerId: context.ownerSession.ownerId, matchId: params.matchId },
+      data: { matchId: params.matchId },
     });
     if (data === null) {
       throw redirect({ to: '/matches' });

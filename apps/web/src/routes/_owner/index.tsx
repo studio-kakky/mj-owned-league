@@ -36,10 +36,8 @@ const OwnerDashboardPage = () => {
 };
 
 export const Route = createFileRoute('/_owner/')({
-  loader: async ({ context }) => {
-    const data = await getDashboardServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
-    });
+  loader: async () => {
+    const data = await getDashboardServerFn();
     return { data };
   },
   component: OwnerDashboardPage,

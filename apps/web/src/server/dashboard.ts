@@ -26,7 +26,6 @@
  */
 
 import { createServerFn } from '@tanstack/react-start';
-import { z } from 'zod';
 import {
   DASHBOARD_RECENT_LIMIT,
   type DashboardActiveLeague,
@@ -35,11 +34,69 @@ import {
   type DashboardGroupCard,
   type DashboardRecentGame,
 } from '../components/dashboard';
+import type { Database } from '../db/client';
 import type { Game, Group, Invitation, League, Match } from '../db/schema';
+import {
+  DrizzleGameRepository,
+  DrizzleGroupRepository,
+  DrizzleInvitationRepository,
+  DrizzleLeagueRepository,
+  DrizzleMatchRepository,
+  DrizzlePlayerRepository,
+} from '../repositories/drizzle';
+import type {
+  GameRepository,
+  GroupRepository,
+  InvitationRepository,
+  LeagueRepository,
+  MatchRepository,
+  PlayerRepository,
+} from '../repositories/interfaces';
+import { getRequestDb, requireOwnerId } from './context';
 import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
+import {
+  MemoryGameRepository,
+  MemoryGroupRepository,
+  MemoryInvitationRepository,
+  MemoryLeagueRepository,
+  MemoryMatchRepository,
+  MemoryPlayerRepository,
+} from './memory-repos';
 
-const dashboardInput = z.object({ ownerId: z.string().min(1) });
-export type DashboardInput = z.infer<typeof dashboardInput>;
+// `ownerId` is resolved server-side from the session; the dashboard takes no
+// client input beyond that, so there is no wire validator.
+export type DashboardInput = { ownerId: string };
+
+interface ServerRepos {
+  groups: GroupRepository;
+  games: GameRepository;
+  leagues: LeagueRepository;
+  matches: MatchRepository;
+  players: PlayerRepository;
+  invitations: InvitationRepository;
+}
+
+const makeRepos = (db?: Database): ServerRepos => {
+  if (db) {
+    return {
+      groups: new DrizzleGroupRepository(db),
+      games: new DrizzleGameRepository(db),
+      leagues: new DrizzleLeagueRepository(db),
+      matches: new DrizzleMatchRepository(db),
+      players: new DrizzlePlayerRepository(db),
+      invitations: new DrizzleInvitationRepository(db),
+    };
+  }
+  const store = getGroupServerStore();
+  return {
+    groups: new MemoryGroupRepository(store),
+    games: new MemoryGameRepository(store),
+    leagues: new MemoryLeagueRepository(store),
+    matches: new MemoryMatchRepository(store),
+    players: new MemoryPlayerRepository(store),
+    invitations: new MemoryInvitationRepository(store),
+  };
+};
 
 /**
  * Override hooks for tests. Exported so the test file can pin the clock
@@ -262,45 +319,66 @@ const countPendingInvitations = (
 export const dashboardHandler = async (
   input: DashboardInput,
   deps: DashboardHandlerDeps = {},
+  db?: Database,
 ): Promise<DashboardData> => {
   const now = deps.now ?? (() => new Date());
   const nowMs = now().getTime();
 
-  // Materialise the dev seed on the first call per owner — same hook the
-  // `/groups` handler uses. Calling it from both places is safe because the
-  // seed is gated by `seededOwnerIds.has(ownerId)`.
-  seedDevDataIfEmpty(input.ownerId);
+  // Materialise the dev seed on the first call per owner — memory mode only.
+  // The seed is gated by `seededOwnerIds.has(ownerId)`, so calling it from
+  // here and from `/groups` is safe.
+  if (!db) seedDevDataIfEmpty(input.ownerId);
 
-  const store = getGroupServerStore();
+  const repos = makeRepos(db);
 
-  const groups = [...store.groups.values()].filter((g) => g.ownerId === input.ownerId);
-  const groupIds = new Set(groups.map((g) => g.id));
+  const groups = await repos.groups.listByOwner(input.ownerId);
   const groupNameById = new Map(groups.map((g) => [g.id, g.name] as const));
 
-  const games = [...store.games.values()].filter((g) => groupIds.has(g.groupId));
-  const leagues = [...store.leagues.values()].filter((l) => groupIds.has(l.groupId));
+  // Gather per-group rows through the repositories. Both backings expose
+  // `listByGroup`, so this works identically against the in-memory store and
+  // D1. With D1 these become one indexed query per group; the dashboard's
+  // group count is small (a handful per owner) so the fan-out is cheap.
+  const perGroup = await Promise.all(
+    groups.map(async (group) => {
+      const [games, leagues, matches, players] = await Promise.all([
+        repos.games.listByGroup(group.id),
+        repos.leagues.listByGroup(group.id),
+        repos.matches.listByGroup(group.id),
+        repos.players.listByGroup(group.id),
+      ]);
+      return { games, leagues, matches, players };
+    }),
+  );
+
+  const games: Game[] = perGroup.flatMap((p) => p.games);
+  const leagues: League[] = perGroup.flatMap((p) => p.leagues);
+  const matches: Match[] = perGroup.flatMap((p) => p.matches);
   const leagueNameById = new Map(leagues.map((l) => [l.id, l.name] as const));
-  const matches = [...store.matches.values()].filter((m) => groupIds.has(m.groupId));
 
   // Player counts per group for the group cards. Filtering `isActive` here is
   // intentional — the S3 spec says "Group のメンバー数" which we read as the
   // currently-active roster, not historical.
   const playersByGroup = new Map<string, number>();
-  for (const player of store.players.values()) {
-    if (!groupIds.has(player.groupId)) continue;
-    if (!player.isActive) continue;
-    playersByGroup.set(player.groupId, (playersByGroup.get(player.groupId) ?? 0) + 1);
+  for (let i = 0; i < groups.length; i++) {
+    let activeCount = 0;
+    for (const player of perGroup[i].players) {
+      if (player.isActive) activeCount++;
+    }
+    playersByGroup.set(groups[i].id, activeCount);
   }
+
+  const invitationRows = await repos.invitations.listByIssuer(input.ownerId);
+  const invitations = new Map<string, Invitation>(invitationRows.map((inv) => [inv.id, inv]));
 
   return {
     groups: projectGroupCards(groups, games, playersByGroup),
     activeLeagues: projectActiveLeagues(leagues, matches, games, groupNameById),
     activeMatches: projectActiveMatches(matches, games, groupNameById, leagueNameById, nowMs),
     recentGames: projectRecentGames(games, groupNameById, leagueNameById, matches),
-    pendingInvitationCount: countPendingInvitations(store.invitations, input.ownerId, nowMs),
+    pendingInvitationCount: countPendingInvitations(invitations, input.ownerId, nowMs),
   };
 };
 
-export const getDashboardServerFn = createServerFn({ method: 'GET' })
-  .inputValidator(dashboardInput)
-  .handler(({ data }) => dashboardHandler(data));
+export const getDashboardServerFn = createServerFn({ method: 'GET' }).handler(async () =>
+  dashboardHandler({ ownerId: await requireOwnerId() }, {}, getRequestDb()),
+);

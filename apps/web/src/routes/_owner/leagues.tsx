@@ -39,20 +39,14 @@ const searchSchema = z.object({
 
 const LeaguesPage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
 
   const handleCreate = useCallback(
     async (input: LeagueCreateInput) => {
-      await createLeagueServerFn({
-        data: {
-          ownerId: ownerSession.ownerId,
-          ...input,
-        },
-      });
+      await createLeagueServerFn({ data: input });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   return (
@@ -68,10 +62,8 @@ const LeaguesPage = () => {
 export const Route = createFileRoute('/_owner/leagues')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
-    const data = await listLeaguesServerFn({
-      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
-    });
+  loader: async ({ deps }) => {
+    const data = await listLeaguesServerFn({ data: { groupId: deps.groupId } });
     return { data };
   },
   component: LeaguesPage,

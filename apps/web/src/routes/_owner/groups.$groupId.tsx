@@ -28,9 +28,9 @@ const GroupHomePage = () => {
 };
 
 export const Route = createFileRoute('/_owner/groups/$groupId')({
-  loader: async ({ context, params }) => {
+  loader: async ({ params }) => {
     const data = await getGroupHomeServerFn({
-      data: { ownerId: context.ownerSession.ownerId, groupId: params.groupId },
+      data: { groupId: params.groupId },
     });
     if (data === null) {
       // Stale / cross-owner id. Send the user back to the list rather than

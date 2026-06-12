@@ -48,15 +48,71 @@ import {
   type GroupHomeRankingRow,
   type GroupHomeRecentGameRow,
 } from '../components/group-home';
-import type { Game, League, Match } from '../db/schema';
+import type { Database } from '../db/client';
+import type { Game, GameResult, League, Match } from '../db/schema';
+import {
+  DrizzleGameRepository,
+  DrizzleGameResultRepository,
+  DrizzleGroupRepository,
+  DrizzleLeagueRepository,
+  DrizzleMatchRepository,
+  DrizzlePlayerRepository,
+} from '../repositories/drizzle';
+import type {
+  GameRepository,
+  GameResultRepository,
+  GroupRepository,
+  LeagueRepository,
+  MatchRepository,
+  PlayerRepository,
+} from '../repositories/interfaces';
+import { getRequestDb, requireOwnerId } from './context';
 import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
+import {
+  MemoryGameRepository,
+  MemoryGameResultRepository,
+  MemoryGroupRepository,
+  MemoryLeagueRepository,
+  MemoryMatchRepository,
+  MemoryPlayerRepository,
+} from './memory-repos';
 
 const groupHomeInput = z.object({
-  ownerId: z.string().min(1),
   groupId: z.string().min(1),
 });
 
-export type GroupHomeInput = z.infer<typeof groupHomeInput>;
+export type GroupHomeInput = z.infer<typeof groupHomeInput> & { ownerId: string };
+
+interface ServerRepos {
+  groups: GroupRepository;
+  leagues: LeagueRepository;
+  matches: MatchRepository;
+  games: GameRepository;
+  gameResults: GameResultRepository;
+  players: PlayerRepository;
+}
+
+const makeRepos = (db?: Database): ServerRepos => {
+  if (db) {
+    return {
+      groups: new DrizzleGroupRepository(db),
+      leagues: new DrizzleLeagueRepository(db),
+      matches: new DrizzleMatchRepository(db),
+      games: new DrizzleGameRepository(db),
+      gameResults: new DrizzleGameResultRepository(db),
+      players: new DrizzlePlayerRepository(db),
+    };
+  }
+  const store = getGroupServerStore();
+  return {
+    groups: new MemoryGroupRepository(store),
+    leagues: new MemoryLeagueRepository(store),
+    matches: new MemoryMatchRepository(store),
+    games: new MemoryGameRepository(store),
+    gameResults: new MemoryGameResultRepository(store),
+    players: new MemoryPlayerRepository(store),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Projections — kept as small top-level functions so each one is
@@ -121,16 +177,13 @@ const projectMatches = (
 const projectRanking = (
   groupId: string,
   games: ReadonlyArray<Game>,
-  store: ReturnType<typeof getGroupServerStore>,
+  gameResults: ReadonlyArray<GameResult>,
   playerNameById: ReadonlyMap<string, string>,
 ): ReadonlyArray<GroupHomeRankingRow> => {
-  // Find this Group's GameResult rows. We iterate `store.gameResults` once
-  // and filter against the set of game ids built above to keep the cost
-  // proportional to the result count, not the cross-product.
-  //
-  // `lastRank` varies per Game (3 for 3P games, 4 for 4P) so we look it up
-  // per row via the parent Game's `format`. Most Groups only use one
-  // format, but mixing is allowed by the schema.
+  // `gameResults` already holds only this Group's rows (the handler gathers
+  // them per Game). `lastRank` varies per Game (3 for 3P games, 4 for 4P) so
+  // we look it up per row via the parent Game's `format`. Most Groups only
+  // use one format, but mixing is allowed by the schema.
   const gameFormatById = new Map<string, string>();
   for (const g of games) gameFormatById.set(g.id, g.format);
 
@@ -138,7 +191,7 @@ const projectRanking = (
     string,
     { gameCount: number; totalPoints: number; topCount: number; lastCount: number }
   >();
-  for (const result of store.gameResults.values()) {
+  for (const result of gameResults) {
     const format = gameFormatById.get(result.gameId);
     if (format === undefined) continue; // not in this Group
     const entry = acc.get(result.playerId) ?? {
@@ -212,47 +265,45 @@ const projectRecentGames = (
  *      `GROUP_HOME_*_LIMIT` constant.
  *   4. Aggregate the GameResult rows into the Group-wide ranking.
  */
-export const groupHomeHandler = async (input: GroupHomeInput): Promise<GroupHomeData | null> => {
-  seedDevDataIfEmpty(input.ownerId);
-  const store = getGroupServerStore();
+export const groupHomeHandler = async (
+  input: GroupHomeInput,
+  db?: Database,
+): Promise<GroupHomeData | null> => {
+  if (!db) seedDevDataIfEmpty(input.ownerId);
+  const repos = makeRepos(db);
 
-  const group = store.groups.get(input.groupId);
+  const group = await repos.groups.findById(input.groupId);
   if (!group || group.ownerId !== input.ownerId) return null;
 
-  // Filter every relevant entity to the Group in single passes. The store is
-  // small enough that scanning the Maps is cheap; with D1 these become four
-  // `WHERE group_id = ?` queries that run in parallel.
-  const leagues: League[] = [];
-  for (const l of store.leagues.values()) {
-    if (l.groupId === group.id) leagues.push(l);
-  }
-  const matches: Match[] = [];
-  for (const m of store.matches.values()) {
-    if (m.groupId === group.id) matches.push(m);
-  }
-  const games: Game[] = [];
-  for (const g of store.games.values()) {
-    if (g.groupId === group.id) games.push(g);
-  }
+  // Gather every relevant entity for the Group through the repositories. Both
+  // backings expose `listByGroup`; with D1 these are `WHERE group_id = ?`
+  // queries that run in parallel.
+  const [leagues, matches, games, players] = await Promise.all([
+    repos.leagues.listByGroup(group.id),
+    repos.matches.listByGroup(group.id),
+    repos.games.listByGroup(group.id),
+    repos.players.listByGroup(group.id),
+  ]);
 
-  // Active-player count for the header pill. The schema-defined
-  // `isActive` flag is the source of truth — inactive players still appear
-  // in the ranking (their historical results are part of the Group's
-  // story) but don't contribute to the headline number.
+  // GameResult rows for the ranking — one `listByGame` per Game. The result
+  // count per Group is modest for MVP, so the fan-out is acceptable; if it
+  // grows we add a `listByGroup` to the GameResult repository.
+  const gameResultsNested = await Promise.all(games.map((g) => repos.gameResults.listByGame(g.id)));
+  const gameResults: GameResult[] = gameResultsNested.flat();
+
+  // Active-player count for the header pill. The schema-defined `isActive`
+  // flag is the source of truth — inactive players still appear in the
+  // ranking (their historical results are part of the Group's story) but
+  // don't contribute to the headline number.
   let activePlayerCount = 0;
-  for (const p of store.players.values()) {
-    if (p.groupId !== group.id) continue;
-    if (!p.isActive) continue;
-    activePlayerCount += 1;
+  for (const p of players) {
+    if (p.isActive) activePlayerCount += 1;
   }
 
   // Lookup maps for the projections below.
   const leagueNameById = new Map(leagues.map((l) => [l.id, l.name] as const));
   const matchNameById = new Map(matches.map((m) => [m.id, m.name] as const));
-  const playerNameById = new Map<string, string>();
-  for (const p of store.players.values()) {
-    if (p.groupId === group.id) playerNameById.set(p.id, p.name);
-  }
+  const playerNameById = new Map<string, string>(players.map((p) => [p.id, p.name] as const));
 
   // Game count + last-played per League + per-Match (single pass over games).
   const matchGameCounts = new Map<string, number>();
@@ -292,11 +343,13 @@ export const groupHomeHandler = async (input: GroupHomeInput): Promise<GroupHome
 
     leagues: projectLeagues(leagues, leagueMatchCounts, leagueGameCounts, leagueLastPlayedAt),
     matches: projectMatches(matches, matchGameCounts, leagueNameById),
-    ranking: projectRanking(group.id, games, store, playerNameById),
+    ranking: projectRanking(group.id, games, gameResults, playerNameById),
     recentGames: projectRecentGames(games, matchNameById, leagueNameById),
   };
 };
 
 export const getGroupHomeServerFn = createServerFn({ method: 'GET' })
   .inputValidator(groupHomeInput)
-  .handler(({ data }) => groupHomeHandler(data));
+  .handler(async ({ data }) =>
+    groupHomeHandler({ ...data, ownerId: await requireOwnerId() }, getRequestDb()),
+  );

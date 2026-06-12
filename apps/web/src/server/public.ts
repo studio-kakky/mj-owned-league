@@ -57,6 +57,7 @@ import type {
   PublicPlayerSummary,
   PublicRulesetSummary,
 } from '../components/public/types';
+import type { Database } from '../db/client';
 import type {
   Game,
   GameResult,
@@ -67,7 +68,100 @@ import type {
   Player,
   Ruleset,
 } from '../db/schema';
-import { type GroupServerStore, getGroupServerStore } from './groups-store';
+import {
+  DrizzleGameRepository,
+  DrizzleGameResultRepository,
+  DrizzleGroupRepository,
+  DrizzleLeagueRepository,
+  DrizzleMatchRepository,
+  DrizzlePlayerRepository,
+  DrizzleRulesetRepository,
+} from '../repositories/drizzle';
+import { getRequestDb } from './context';
+import { type GroupServerStore, gameResultKey, getGroupServerStore } from './groups-store';
+
+// ---------------------------------------------------------------------------
+// Storage resolution (Issue #39)
+// ---------------------------------------------------------------------------
+// The public projections below were written against a fully-populated
+// `GroupServerStore` (in-memory Maps). Rather than rewrite every helper to take
+// repositories, we hydrate a `GroupServerStore`-shaped *snapshot* from D1 that
+// contains exactly the one League's Group data a public page needs, then reuse
+// the existing helpers unchanged.
+//
+// Public reads are always scoped to a single League (resolved by slug), so the
+// snapshot is bounded by one Group's worth of rows. When `db` is absent (unit
+// tests / dev) we return the shared in-memory store directly.
+
+/** Builds an empty store snapshot (only the Maps the public helpers read). */
+const emptySnapshot = (): GroupServerStore => ({
+  groups: new Map(),
+  rulesets: new Map(),
+  games: new Map(),
+  players: new Map(),
+  leagues: new Map(),
+  matches: new Map(),
+  invitations: new Map(),
+  gameResults: new Map(),
+  seededOwnerIds: new Set(),
+});
+
+/**
+ * Hydrates a store snapshot from D1 for the Group that owns the League with
+ * `publicSlug`. Returns an empty snapshot when the slug is unknown — the
+ * handlers then resolve `league === null` and return their not-found shape.
+ */
+const hydrateSnapshotForSlug = async (
+  db: Database,
+  publicSlug: string,
+): Promise<GroupServerStore> => {
+  const snapshot = emptySnapshot();
+
+  const league = await new DrizzleLeagueRepository(db).findByPublicSlug(publicSlug);
+  if (league === null) return snapshot;
+
+  const groups = new DrizzleGroupRepository(db);
+  const leagues = new DrizzleLeagueRepository(db);
+  const rulesets = new DrizzleRulesetRepository(db);
+  const matches = new DrizzleMatchRepository(db);
+  const games = new DrizzleGameRepository(db);
+  const players = new DrizzlePlayerRepository(db);
+  const gameResults = new DrizzleGameResultRepository(db);
+
+  const group = await groups.findById(league.groupId);
+  if (group === null) return snapshot;
+  snapshot.groups.set(group.id, group);
+
+  // Load the whole Group's Leagues / Matches / Games / Players / Rulesets so
+  // the cross-entity projections (ranking, per-player history) see everything
+  // they would in memory. GameResults are loaded per Game.
+  const [groupLeagues, groupMatches, groupGames, groupPlayers, groupRulesets] = await Promise.all([
+    leagues.listByGroup(group.id),
+    matches.listByGroup(group.id),
+    games.listByGroup(group.id),
+    players.listByGroup(group.id),
+    rulesets.listByGroup(group.id),
+  ]);
+  for (const row of groupLeagues) snapshot.leagues.set(row.id, row);
+  for (const row of groupMatches) snapshot.matches.set(row.id, row);
+  for (const row of groupGames) snapshot.games.set(row.id, row);
+  for (const row of groupPlayers) snapshot.players.set(row.id, row);
+  for (const row of groupRulesets) snapshot.rulesets.set(row.id, row);
+
+  const resultsNested = await Promise.all(groupGames.map((g) => gameResults.listByGame(g.id)));
+  for (const results of resultsNested) {
+    for (const r of results) snapshot.gameResults.set(gameResultKey(r.gameId, r.playerId), r);
+  }
+
+  return snapshot;
+};
+
+/** Returns the store the handlers read: a D1 snapshot when `db` is present. */
+const resolveStore = async (
+  db: Database | undefined,
+  publicSlug: string,
+): Promise<GroupServerStore> =>
+  db ? hydrateSnapshotForSlug(db, publicSlug) : getGroupServerStore();
 
 // ---------------------------------------------------------------------------
 // Validators
@@ -288,8 +382,9 @@ const projectMatchPayload = (
  */
 export const getPublicLeagueHandler = async (
   input: PublicSlugInput,
+  db?: Database,
 ): Promise<PublicLeagueData | null> => {
-  const store = getGroupServerStore();
+  const store = await resolveStore(db, input.publicSlug);
 
   const league = findLeagueBySlug(store, input.publicSlug);
   if (league === null) return null;
@@ -355,8 +450,9 @@ export const getPublicLeagueHandler = async (
  */
 export const getPublicLeagueMatchHandler = async (
   input: PublicLeagueMatchInput,
+  db?: Database,
 ): Promise<PublicMatchData | null> => {
-  const store = getGroupServerStore();
+  const store = await resolveStore(db, input.publicSlug);
 
   const league = findLeagueBySlug(store, input.publicSlug);
   if (league === null) return null;
@@ -395,8 +491,9 @@ export const getPublicMatchHandler = async (
  */
 export const getPublicPlayerHandler = async (
   input: PublicLeaguePlayerInput,
+  db?: Database,
 ): Promise<PublicPlayerData | null> => {
-  const store = getGroupServerStore();
+  const store = await resolveStore(db, input.publicSlug);
 
   const league = findLeagueBySlug(store, input.publicSlug);
   if (league === null) return null;
@@ -519,11 +616,11 @@ export const getPublicPlayerHandler = async (
 
 export const getPublicLeagueServerFn = createServerFn({ method: 'GET' })
   .inputValidator(slugInput)
-  .handler(({ data }) => getPublicLeagueHandler(data));
+  .handler(({ data }) => getPublicLeagueHandler(data, getRequestDb()));
 
 export const getPublicLeagueMatchServerFn = createServerFn({ method: 'GET' })
   .inputValidator(leagueMatchInput)
-  .handler(({ data }) => getPublicLeagueMatchHandler(data));
+  .handler(({ data }) => getPublicLeagueMatchHandler(data, getRequestDb()));
 
 export const getPublicMatchServerFn = createServerFn({ method: 'GET' })
   .inputValidator(slugInput)
@@ -531,4 +628,4 @@ export const getPublicMatchServerFn = createServerFn({ method: 'GET' })
 
 export const getPublicPlayerServerFn = createServerFn({ method: 'GET' })
   .inputValidator(leaguePlayerInput)
-  .handler(({ data }) => getPublicPlayerHandler(data));
+  .handler(({ data }) => getPublicPlayerHandler(data, getRequestDb()));

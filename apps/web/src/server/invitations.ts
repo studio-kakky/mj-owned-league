@@ -29,16 +29,15 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import type { InvitationListItem, InvitationUiStatus } from '../components/invitations';
-import type { Invitation, NewInvitation } from '../db/schema';
+import type { Database } from '../db/client';
+import type { Invitation } from '../db/schema';
+import { DrizzleInvitationRepository } from '../repositories/drizzle';
 import type { InvitationRepository } from '../repositories/interfaces';
 import { InvitationInvalidError } from '../services/errors';
 import { InvitationService } from '../services/invitation-service';
-import {
-  type GroupServerStore,
-  getGroupServerStore,
-  type InMemoryStoreShape,
-  seedDevDataIfEmpty,
-} from './groups-store';
+import { getRequestDb, requireOwnerId } from './context';
+import { getGroupServerStore, seedDevDataIfEmpty } from './groups-store';
+import { MemoryInvitationRepository } from './memory-repos';
 
 // ---------------------------------------------------------------------------
 // Repository facade
@@ -50,13 +49,15 @@ interface ServerDeps {
 }
 
 /**
- * Builds an `InvitationService` backed by the shared in-memory store.
- * Exported clock / id deps are not surfaced here because production callers
- * want the real ones; the test seam is at the handler / service-test level.
+ * Builds an `InvitationService` backed by D1 (when a `db` is supplied) or the
+ * shared in-memory store (tests / dev). The service's clock / id / token deps
+ * keep their real defaults — the test seam is at the handler / service-test
+ * level, not here.
  */
-const makeDeps = (): ServerDeps => {
-  const store = getGroupServerStore();
-  const repo = new MemoryInvitationRepository(store);
+const makeDeps = (db?: Database): ServerDeps => {
+  const repo = db
+    ? new DrizzleInvitationRepository(db)
+    : new MemoryInvitationRepository(getGroupServerStore());
   const service = new InvitationService(repo);
   return { service, repo };
 };
@@ -64,11 +65,10 @@ const makeDeps = (): ServerDeps => {
 // ---------------------------------------------------------------------------
 // Input schemas / types
 // ---------------------------------------------------------------------------
-
-const listInvitationsInput = z.object({ ownerId: z.string().min(1) });
+// `ownerId` is resolved server-side from the session and added to the handler
+// input types via `WithOwner`; it is never part of the wire payload.
 
 const issueInvitationInput = z.object({
-  ownerId: z.string().min(1),
   /**
    * Owner-supplied memo. Accepts an empty string (which we normalise to
    * `null`) so the client can pass the trimmed form value without an extra
@@ -78,13 +78,14 @@ const issueInvitationInput = z.object({
 });
 
 const revokeInvitationInput = z.object({
-  ownerId: z.string().min(1),
   invitationId: z.string().min(1),
 });
 
-export type ListInvitationsInput = z.infer<typeof listInvitationsInput>;
-export type IssueInvitationServerInput = z.infer<typeof issueInvitationInput>;
-export type RevokeInvitationServerInput = z.infer<typeof revokeInvitationInput>;
+type WithOwner<T> = T & { ownerId: string };
+
+export type ListInvitationsInput = { ownerId: string };
+export type IssueInvitationServerInput = WithOwner<z.infer<typeof issueInvitationInput>>;
+export type RevokeInvitationServerInput = WithOwner<z.infer<typeof revokeInvitationInput>>;
 
 /**
  * Override hooks for tests. Production callers should not pass these — the
@@ -141,12 +142,13 @@ const projectToListItem = (row: Invitation, nowMs: number): InvitationListItem =
 export const listInvitationsHandler = async (
   input: ListInvitationsInput,
   deps: InvitationHandlerDeps = {},
+  db?: Database,
 ): Promise<ReadonlyArray<InvitationListItem>> => {
-  // Materialise the dev seed on the first call per owner — same hook the
-  // other server modules use. Idempotent thanks to `seededOwnerIds`.
-  seedDevDataIfEmpty(input.ownerId);
+  // Materialise the dev seed on the first call per owner (memory mode only).
+  // Idempotent thanks to `seededOwnerIds`.
+  if (!db) seedDevDataIfEmpty(input.ownerId);
 
-  const { service } = makeDeps();
+  const { service } = makeDeps(db);
   const now = deps.now ?? (() => new Date());
   const nowMs = now().getTime();
 
@@ -168,13 +170,14 @@ export const listInvitationsHandler = async (
 export const issueInvitationHandler = async (
   input: IssueInvitationServerInput,
   deps: InvitationHandlerDeps = {},
+  db?: Database,
 ): Promise<{ token: string; invitation: InvitationListItem }> => {
   // Don't seed on issue — listing seeds first, and seeding on a mutation
   // would conflate "user is new" with "user just issued a new invitation".
   // If the dashboard runs first the seed materialises before we get here;
   // if not, an empty initial list is the correct state.
 
-  const { service, repo } = makeDeps();
+  const { service, repo } = makeDeps(db);
   const now = deps.now ?? (() => new Date());
 
   const memo = input.memo === undefined || input.memo === '' ? null : input.memo;
@@ -208,8 +211,9 @@ export const issueInvitationHandler = async (
 export const revokeInvitationHandler = async (
   input: RevokeInvitationServerInput,
   deps: InvitationHandlerDeps = {},
+  db?: Database,
 ): Promise<{ revoked: true; invitation: InvitationListItem }> => {
-  const { service, repo } = makeDeps();
+  const { service, repo } = makeDeps(db);
   const now = deps.now ?? (() => new Date());
 
   // Ownership guard — fetch first so we can produce a deterministic error
@@ -232,62 +236,18 @@ export const revokeInvitationHandler = async (
 // Server functions
 // ---------------------------------------------------------------------------
 
-export const listInvitationsServerFn = createServerFn({ method: 'GET' })
-  .inputValidator(listInvitationsInput)
-  .handler(({ data }) => listInvitationsHandler(data));
+export const listInvitationsServerFn = createServerFn({ method: 'GET' }).handler(async () =>
+  listInvitationsHandler({ ownerId: await requireOwnerId() }, {}, getRequestDb()),
+);
 
 export const issueInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(issueInvitationInput)
-  .handler(({ data }) => issueInvitationHandler(data));
+  .handler(async ({ data }) =>
+    issueInvitationHandler({ ...data, ownerId: await requireOwnerId() }, {}, getRequestDb()),
+  );
 
 export const revokeInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(revokeInvitationInput)
-  .handler(({ data }) => revokeInvitationHandler(data));
-
-// ---------------------------------------------------------------------------
-// In-memory repository
-// ---------------------------------------------------------------------------
-// Same shape as the other server-module repos. When the D1 binding lands
-// this gets swapped for a Drizzle-backed implementation and nothing above
-// has to change.
-
-class MemoryInvitationRepository implements InvitationRepository {
-  constructor(private readonly store: GroupServerStore) {}
-
-  async findById(id: string): Promise<Invitation | null> {
-    return this.store.invitations.get(id) ?? null;
-  }
-
-  async findByToken(token: string): Promise<Invitation | null> {
-    for (const row of this.store.invitations.values()) {
-      if (row.token === token) return row;
-    }
-    return null;
-  }
-
-  async listByIssuer(ownerId: string): Promise<Invitation[]> {
-    return [...this.store.invitations.values()].filter((i) => i.issuedByOwnerId === ownerId);
-  }
-
-  async create(input: InMemoryStoreShape['invitations']): Promise<Invitation> {
-    const row: Invitation = {
-      createdAt: new Date().toISOString(),
-      status: 'PENDING',
-      memo: null,
-      consumedAt: null,
-      consumedByUserId: null,
-      revokedAt: null,
-      ...input,
-    } as Invitation;
-    this.store.invitations.set(row.id, row);
-    return row;
-  }
-
-  async update(id: string, input: Partial<Omit<NewInvitation, 'id'>>): Promise<Invitation | null> {
-    const existing = this.store.invitations.get(id);
-    if (!existing) return null;
-    const next = { ...existing, ...input } as Invitation;
-    this.store.invitations.set(id, next);
-    return next;
-  }
-}
+  .handler(async ({ data }) =>
+    revokeInvitationHandler({ ...data, ownerId: await requireOwnerId() }, {}, getRequestDb()),
+  );

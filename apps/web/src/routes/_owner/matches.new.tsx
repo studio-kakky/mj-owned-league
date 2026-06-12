@@ -56,14 +56,11 @@ const searchSchema = z.object({
 
 const MatchCreatePage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
 
   const handleSubmit = useCallback(
     async (input: MatchCreateInput) => {
-      const created = await createMatchServerFn({
-        data: { ownerId: ownerSession.ownerId, ...input },
-      });
+      const created = await createMatchServerFn({ data: input });
       await router.invalidate();
       if (created.leagueId !== null) {
         await router.navigate({
@@ -76,7 +73,7 @@ const MatchCreatePage = () => {
       // dedicated /matches/$matchId detail (S9) is not implemented yet.
       await router.navigate({ to: '/matches' });
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleCancel = useCallback(() => {
@@ -105,10 +102,9 @@ export const Route = createFileRoute('/_owner/matches/new')({
   // query changes (e.g. the user picks a different League from a related
   // dropdown elsewhere).
   loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
+  loader: async ({ deps }) => {
     const data = await getMatchCreateContextServerFn({
       data: {
-        ownerId: context.ownerSession.ownerId,
         leagueId: deps.leagueId,
         groupId: deps.groupId,
       },

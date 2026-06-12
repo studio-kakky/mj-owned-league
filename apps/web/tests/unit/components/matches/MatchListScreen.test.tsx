@@ -42,9 +42,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 import { MatchListScreen } from '../../../../src/components/matches/MatchListScreen';
 
-const makeItem = (
-  over: Partial<Parameters<typeof MatchListScreen>[0]['matches'][number]> = {},
-) => {
+const makeItem = (over: Partial<Parameters<typeof MatchListScreen>[0]['matches'][number]> = {}) => {
   return {
     id: 'm1',
     groupId: 'g1',

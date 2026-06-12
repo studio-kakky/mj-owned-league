@@ -39,7 +39,6 @@ import {
 
 const InvitationsPage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { invitations } = Route.useLoaderData();
 
   // Browser-only resolution. Empty string during SSR; see route docstring.
@@ -47,9 +46,7 @@ const InvitationsPage = () => {
 
   const handleIssue = useCallback(
     async (memo: string) => {
-      const result = await issueInvitationServerFn({
-        data: { ownerId: ownerSession.ownerId, memo },
-      });
+      const result = await issueInvitationServerFn({ data: { memo } });
       // 一覧を最新化する。発行完了モーダルの URL 表示は呼び出し元が結果を
       // そのまま使うので、invalidate を await しなくても URL は出る — が、
       // 完了モーダル裏で一覧が古いままだと「コピーボタンを後追いで使う」
@@ -57,17 +54,15 @@ const InvitationsPage = () => {
       await router.invalidate();
       return { token: result.token };
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleRevoke = useCallback(
     async (invitationId: string) => {
-      await revokeInvitationServerFn({
-        data: { ownerId: ownerSession.ownerId, invitationId },
-      });
+      await revokeInvitationServerFn({ data: { invitationId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   return (
@@ -81,10 +76,8 @@ const InvitationsPage = () => {
 };
 
 export const Route = createFileRoute('/_owner/invitations')({
-  loader: async ({ context }) => {
-    const invitations = await listInvitationsServerFn({
-      data: { ownerId: context.ownerSession.ownerId },
-    });
+  loader: async () => {
+    const invitations = await listInvitationsServerFn();
     return { invitations };
   },
   component: InvitationsPage,

@@ -19,6 +19,7 @@ import {
   createMatchHandler,
   getMatchCreateContextHandler,
 } from '../../../src/server/matches';
+import { MemoryMatchRepository } from '../../../src/server/memory-repos';
 
 const owner = 'owner-test-1';
 const otherOwner = 'owner-test-2';
@@ -208,7 +209,8 @@ describe('computeNextSequenceNumber', () => {
     for (const m of [...store.matches.values()]) {
       if (m.leagueId === league.id) store.matches.delete(m.id);
     }
-    expect(computeNextSequenceNumber(store, league.id)).toBe(1);
+    const matches = new MemoryMatchRepository(store);
+    expect(await computeNextSequenceNumber(matches, league.id)).toBe(1);
   });
 
   it('returns max + 1 when the League has existing numbered Matches', async () => {
@@ -217,6 +219,7 @@ describe('computeNextSequenceNumber', () => {
     const league = [...store.leagues.values()][0];
     if (!league) throw new Error('expected a seeded league');
     // Seed already has sequenceNumber=1; verify we land on 2.
-    expect(computeNextSequenceNumber(store, league.id)).toBe(2);
+    const matches = new MemoryMatchRepository(store);
+    expect(await computeNextSequenceNumber(matches, league.id)).toBe(2);
   });
 });

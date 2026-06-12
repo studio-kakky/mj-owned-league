@@ -49,7 +49,6 @@ const searchSchema = z.object({
 
 const SettingsPage = () => {
   const router = useRouter();
-  const { ownerSession } = Route.useRouteContext();
   const { data } = Route.useLoaderData();
 
   // `groupId` is captured at the top so all action callbacks can close over
@@ -61,93 +60,75 @@ const SettingsPage = () => {
   const handleCreateRuleset = useCallback(
     async (input: RulesetFormInput) => {
       if (groupId === null) return;
-      await createRulesetServerFn({
-        data: { ownerId: ownerSession.ownerId, groupId, input },
-      });
+      await createRulesetServerFn({ data: { groupId, input } });
       await router.invalidate();
     },
-    [groupId, ownerSession.ownerId, router],
+    [groupId, router],
   );
 
   const handleUpdateRuleset = useCallback(
     async (rulesetId: string, input: RulesetFormInput) => {
-      await updateRulesetServerFn({
-        data: { ownerId: ownerSession.ownerId, rulesetId, input },
-      });
+      await updateRulesetServerFn({ data: { rulesetId, input } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleDeleteRuleset = useCallback(
     async (rulesetId: string) => {
-      await deleteRulesetServerFn({
-        data: { ownerId: ownerSession.ownerId, rulesetId },
-      });
+      await deleteRulesetServerFn({ data: { rulesetId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleSetDefaultRuleset = useCallback(
     async (rulesetId: string) => {
-      await setDefaultRulesetServerFn({
-        data: { ownerId: ownerSession.ownerId, rulesetId },
-      });
+      await setDefaultRulesetServerFn({ data: { rulesetId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleCreatePlayer = useCallback(
     async (name: string) => {
       if (groupId === null) return;
-      await createPlayerServerFn({
-        data: { ownerId: ownerSession.ownerId, groupId, name },
-      });
+      await createPlayerServerFn({ data: { groupId, name } });
       await router.invalidate();
     },
-    [groupId, ownerSession.ownerId, router],
+    [groupId, router],
   );
 
   const handleRenamePlayer = useCallback(
     async (playerId: string, name: string) => {
-      await renamePlayerServerFn({
-        data: { ownerId: ownerSession.ownerId, playerId, name },
-      });
+      await renamePlayerServerFn({ data: { playerId, name } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleDeletePlayer = useCallback(
     async (playerId: string) => {
-      await deletePlayerServerFn({
-        data: { ownerId: ownerSession.ownerId, playerId },
-      });
+      await deletePlayerServerFn({ data: { playerId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleDeactivatePlayer = useCallback(
     async (playerId: string) => {
-      await deactivatePlayerServerFn({
-        data: { ownerId: ownerSession.ownerId, playerId },
-      });
+      await deactivatePlayerServerFn({ data: { playerId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   const handleReactivatePlayer = useCallback(
     async (playerId: string) => {
-      await reactivatePlayerServerFn({
-        data: { ownerId: ownerSession.ownerId, playerId },
-      });
+      await reactivatePlayerServerFn({ data: { playerId } });
       await router.invalidate();
     },
-    [ownerSession.ownerId, router],
+    [router],
   );
 
   return (
@@ -169,10 +150,8 @@ const SettingsPage = () => {
 export const Route = createFileRoute('/_owner/settings')({
   validateSearch: searchSchema,
   loaderDeps: ({ search }) => ({ groupId: search.groupId }),
-  loader: async ({ context, deps }) => {
-    const data = await getSettingsServerFn({
-      data: { ownerId: context.ownerSession.ownerId, groupId: deps.groupId },
-    });
+  loader: async ({ deps }) => {
+    const data = await getSettingsServerFn({ data: { groupId: deps.groupId } });
     return { data };
   },
   component: SettingsPage,

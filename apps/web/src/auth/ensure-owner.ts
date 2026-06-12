@@ -48,10 +48,7 @@ export interface UpsertOwnerInput {
  * trip — SELECT-then-INSERT would race and double the cost in the common
  * "already exists" path on session refresh.
  */
-export const upsertOwnerForUser = async (
-  db: Database,
-  user: UpsertOwnerInput,
-): Promise<void> => {
+export const upsertOwnerForUser = async (db: Database, user: UpsertOwnerInput): Promise<void> => {
   await db
     .insert(owners)
     .values({ id: user.id, email: user.email })
