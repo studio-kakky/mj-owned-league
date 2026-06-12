@@ -78,6 +78,7 @@ export const OwnerShell = ({
         <OwnerBottomNav
           homeTo={activeGroup ? `/groups/${activeGroup.id}` : '/groups'}
           leaguesTo={activeGroup ? `/groups/${activeGroup.id}/leagues` : '/groups'}
+          matchesTo={activeGroup ? `/groups/${activeGroup.id}/matches` : '/groups'}
         />
       ) : null}
 

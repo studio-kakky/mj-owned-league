@@ -141,7 +141,6 @@ export interface MatchDetailData {
 export interface MatchListItem {
   id: string;
   groupId: string;
-  groupName: string;
   leagueId: string | null;
   leagueName: string | null;
   name: string;
@@ -154,43 +153,46 @@ export interface MatchListItem {
 /**
  * Aggregate payload the S9 list loader hands to {@link MatchListScreen}.
  *
- * When `leagueId` is set the loader filters to that League (used by the
- * `/matches?leagueId=…` route from S7 League detail). Otherwise it surfaces
- * every Match owned by the caller across Groups.
+ * The list is always scoped to one Group (`/groups/:groupId/matches`, Issue
+ * #61). When `leagueId` is set the loader further filters to that League (the
+ * リーグセレクタ chips and the S7 League detail deep-link both use it). The
+ * `?leagueId=` filter is validated server-side to belong to the same Group —
+ * a foreign / stale id falls back to the Group-wide list.
  *
- * `leagueName` is null when the filter is cross-Group (= no single League).
+ * `leagueName` is null when the list shows every Match in the Group (= no
+ * single League).
  *
- * `leagueOptions` is unfiltered — it always lists every League the Owner has
- * across every Group, so the in-page リーグセレクタ can switch the scope
- * without an extra round trip. Order is `groupName`-then-`name` ascending so
- * leagues from the same Group cluster together.
+ * `leagueOptions` lists every League in the scoped Group, so the in-page
+ * リーグセレクタ can switch the filter without an extra round trip. Order is
+ * `name` ascending. Because every option is in the same Group there is no
+ * cross-Group name collision to disambiguate.
  */
 export interface MatchListData {
+  /** The Group the list is scoped to (from the URL path). */
+  groupId: string;
+  groupName: string;
   matches: ReadonlyArray<MatchListItem>;
   /** Set when the list is filtered to a single League — drives the header. */
   scope: MatchListScope;
-  /** All Leagues the Owner has — drives the in-page selector. */
+  /** Every League in the scoped Group — drives the in-page selector. */
   leagueOptions: ReadonlyArray<MatchListLeagueOption>;
 }
 
 export interface MatchListScope {
-  /** `null` for cross-Group; set when filtered by League. */
+  /** `null` for the Group-wide list; set when filtered by League. */
   leagueId: string | null;
   leagueName: string | null;
-  groupName: string | null;
-  /** Convenience link for "Match を追加" — pre-filled with `?leagueId=` etc. */
-  createSearch: { leagueId?: string; groupId?: string };
+  /** Convenience search for "Match を追加" — pre-filled with `?leagueId=` when scoped. */
+  createSearch: { leagueId?: string };
 }
 
 /**
- * One entry in the in-page リーグセレクタ. `groupName` is surfaced as a
- * secondary label so two leagues with identical names in different Groups
- * stay distinguishable.
+ * One entry in the in-page リーグセレクタ. Every option belongs to the scoped
+ * Group, so no Group disambiguation label is needed (Issue #61).
  */
 export interface MatchListLeagueOption {
   id: string;
   name: string;
-  groupName: string;
 }
 
 /**

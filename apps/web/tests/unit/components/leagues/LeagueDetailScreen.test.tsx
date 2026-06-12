@@ -6,16 +6,29 @@ vi.mock('@tanstack/react-router', () => ({
     to,
     children,
     className,
+    params,
+    search,
     ...rest
   }: {
     to: string;
     children: React.ReactNode;
     className?: string;
-  } & Record<string, unknown>) => (
-    <a href={to} className={className} {...rest}>
-      {children}
-    </a>
-  ),
+    params?: Record<string, string>;
+    search?: Record<string, string>;
+  } & Record<string, unknown>) => {
+    const path = params
+      ? Object.entries(params).reduce((acc, [k, v]) => acc.replace(`$${k}`, v), to)
+      : to;
+    const query =
+      search && Object.keys(search).length > 0
+        ? `?${new URLSearchParams(search as Record<string, string>).toString()}`
+        : '';
+    return (
+      <a href={`${path}${query}`} className={className} {...rest}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 import { LeagueDetailScreen } from '../../../../src/components/leagues/LeagueDetailScreen';
@@ -72,20 +85,19 @@ describe('LeagueDetailScreen', () => {
     expect(screen.getByTestId('league-detail-game-row-game-1')).toBeInTheDocument();
   });
 
-  it('renders a "マッチを追加" link pointing at /matches/new with the league id (Issue #20 / #19)', () => {
+  it('renders a "マッチを追加" link pointing at the group-scoped create page with the league id (Issue #20 / #19 / #61)', () => {
     render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
     const link = screen.getByTestId('league-detail-match-create-link');
-    expect(link).toHaveAttribute('href', '/matches/new');
-    // Issue #19 split the section header into a 「一覧」 link + 「追加」
-    // CTA so the label collapsed to just 「追加」 — the destination is
-    // still S10. The 「一覧」 sibling lives at /matches?leagueId=…
+    // Issue #61 moved the create page under the Group namespace; the League
+    // pin survives as `?leagueId=`.
+    expect(link).toHaveAttribute('href', '/groups/g1/matches/new?leagueId=l1');
     expect(link).toHaveTextContent('追加');
   });
 
-  it('also renders a "一覧" link to the League-scoped Match list (Issue #19)', () => {
+  it('also renders a "一覧" link to the group-scoped, League-filtered Match list (Issue #19 / #61)', () => {
     render(<LeagueDetailScreen data={baseDetail} origin="https://example.com" />);
     const link = screen.getByTestId('league-detail-match-list-link');
-    expect(link).toHaveAttribute('href', '/matches');
+    expect(link).toHaveAttribute('href', '/groups/g1/matches?leagueId=l1');
     expect(link).toHaveTextContent('一覧');
   });
 

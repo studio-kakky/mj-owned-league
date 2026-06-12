@@ -4,9 +4,11 @@ import { formatDate } from './formatDate';
 
 export const MatchesSection = ({
   matches,
+  groupId,
   leagueId,
 }: {
   matches: ReadonlyArray<LeagueMatchRow>;
+  groupId: string;
   leagueId: string;
 }) => {
   return (
@@ -15,7 +17,8 @@ export const MatchesSection = ({
         <h2 className="text-sm font-semibold text-zinc-200">マッチ</h2>
         <div className="flex items-center gap-2">
           <Link
-            to="/matches"
+            to="/groups/$groupId/matches"
+            params={{ groupId }}
             search={{ leagueId }}
             data-testid="league-detail-match-list-link"
             className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 transition-colors hover:border-emerald-500/70"
@@ -23,7 +26,8 @@ export const MatchesSection = ({
             一覧
           </Link>
           <Link
-            to="/matches/new"
+            to="/groups/$groupId/matches/new"
+            params={{ groupId }}
             search={{ leagueId }}
             data-testid="league-detail-match-create-link"
             className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
@@ -44,8 +48,8 @@ export const MatchesSection = ({
           {matches.map((match) => (
             <li key={match.id} data-testid={`league-detail-match-row-${match.id}`}>
               <Link
-                to="/matches/$matchId"
-                params={{ matchId: match.id }}
+                to="/groups/$groupId/matches/$matchId"
+                params={{ groupId, matchId: match.id }}
                 className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 transition-colors hover:border-emerald-500/70"
               >
                 <div className="min-w-0">

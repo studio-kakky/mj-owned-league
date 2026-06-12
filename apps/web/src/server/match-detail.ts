@@ -144,18 +144,31 @@ const makeRepos = (db?: Database): ServerRepos => {
 // types add it back via `WithOwner`.
 
 const matchDetailInput = z.object({
+  /**
+   * The Group the detail page is scoped to (from the URL path). The handler
+   * verifies the target Match actually belongs to this Group so a Match id
+   * pasted under the wrong Group namespace resolves to `null` rather than
+   * silently rendering under a Group it does not belong to.
+   */
+  groupId: z.string().min(1),
   matchId: z.string().min(1),
 });
 
 const matchListInput = z.object({
-  leagueId: z.string().min(1).optional(),
   /**
-   * Optional Group filter. When supplied (and the Group is owned by the
-   * caller), the list is narrowed to Matches in that Group. Honoured only
-   * when `leagueId` is not also supplied — `leagueId` is the stricter
-   * filter and wins. Foreign / unknown ids silently fall through.
+   * The Group whose Matches to list. Required since Issue #61: the list lives
+   * at `/groups/:groupId/matches`, so `groupId` always comes from the URL
+   * path. There is no cross-Group fallback — a foreign / unknown id resolves
+   * to `null` (the route redirects to `/groups`).
    */
-  groupId: z.string().min(1).optional(),
+  groupId: z.string().min(1),
+  /**
+   * Optional `?leagueId=` filter, scoped to the Group above. When supplied the
+   * list narrows to that League's Matches; the handler validates the League
+   * belongs to `groupId`, so a foreign / stale id silently falls back to the
+   * Group-wide list.
+   */
+  leagueId: z.string().min(1).optional(),
 });
 
 const playerInput = z.object({
@@ -353,6 +366,10 @@ export const getMatchDetailHandler = async (
 
   const match = await repos.matches.findById(input.matchId);
   if (match === null) return null;
+  // The Match must live under the Group in the URL path. A Match id pasted
+  // under the wrong Group namespace resolves to `null` (the route redirects to
+  // that Group's list) rather than rendering under a foreign Group.
+  if (match.groupId !== input.groupId) return null;
   const group = await repos.groups.findById(match.groupId);
   if (!group || group.ownerId !== input.ownerId) return null;
 
@@ -422,104 +439,82 @@ export const getMatchDetailHandler = async (
 };
 
 /**
- * Returns the Match list payload. When `leagueId` is supplied the list is
- * filtered to that League; otherwise every Match across the Owner's Groups
- * is surfaced.
+ * Returns the Match list payload for one Group (`/groups/:groupId/matches`,
+ * Issue #61). The `groupId` is required — it comes from the URL path and there
+ * is no cross-Group fallback.
+ *
+ * Returns `null` when the Group does not exist or is owned by a different
+ * Owner; the route surfaces that as a redirect to `/groups`. Ownership is the
+ * server's responsibility: we never trust the path `groupId` on the wire even
+ * though the UI only links to the Owner's own Groups.
+ *
+ * When `leagueId` is supplied the list is further narrowed to that League. The
+ * League must belong to the scoped Group — a foreign / stale id silently falls
+ * back to the Group-wide list.
  */
 export const listMatchesHandler = async (
   input: MatchListInput,
   db?: Database,
-): Promise<MatchListData> => {
+): Promise<MatchListData | null> => {
   if (!db) seedDevDataIfEmpty(input.ownerId);
   const repos = makeRepos(db);
 
-  const ownedGroups = await repos.groups.listByOwner(input.ownerId);
-  const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
-  const groupNameById = new Map(ownedGroups.map((g) => [g.id, g.name] as const));
+  // Ownership guard: the Group must exist and belong to the caller. A foreign
+  // / unknown id resolves to `null` (the route redirects to `/groups`).
+  const group = await repos.groups.findById(input.groupId);
+  if (group === null || group.ownerId !== input.ownerId) return null;
 
-  // Gather Leagues / Matches / Games per owned Group through the repositories.
-  const perGroup = await Promise.all(
-    ownedGroups.map(async (group) => {
-      const [leagues, matches, games] = await Promise.all([
-        repos.leagues.listByGroup(group.id),
-        repos.matches.listByGroup(group.id),
-        repos.games.listByGroup(group.id),
-      ]);
-      return { group, leagues, matches, games };
-    }),
-  );
+  // Gather Leagues / Matches / Games for the scoped Group. Works identically
+  // against the in-memory store and D1.
+  const [leagues, matches, games] = await Promise.all([
+    repos.leagues.listByGroup(group.id),
+    repos.matches.listByGroup(group.id),
+    repos.games.listByGroup(group.id),
+  ]);
 
-  const leagueNameById = new Map<string, string>();
-  // Collected separately so the in-page リーグセレクタ can render every owned
-  // League, not just the ones with matches yet. Sorted later (groupName-then-
-  // leagueName ascending) so leagues from the same Group cluster together.
-  const leagueOptionRows: Array<MatchListLeagueOption> = [];
-  for (const { leagues } of perGroup) {
-    for (const l of leagues) {
-      leagueNameById.set(l.id, l.name);
-      leagueOptionRows.push({
-        id: l.id,
-        name: l.name,
-        groupName: groupNameById.get(l.groupId) ?? '',
-      });
-    }
-  }
-  leagueOptionRows.sort((a, b) => {
-    if (a.groupName !== b.groupName) return a.groupName.localeCompare(b.groupName);
-    return a.name.localeCompare(b.name);
-  });
+  const leagueNameById = new Map(leagues.map((l) => [l.id, l.name] as const));
+  const leagueById = new Map(leagues.map((l) => [l.id, l] as const));
 
-  const allLeagues = perGroup.flatMap((p) => p.leagues);
-  const leagueById = new Map(allLeagues.map((l) => [l.id, l] as const));
+  // Every League in the Group powers the in-page リーグセレクタ — including
+  // those without matches yet. Sorted by name ascending; no Group label is
+  // needed because every option lives in this one Group.
+  const leagueOptionRows: Array<MatchListLeagueOption> = leagues
+    .map((l) => ({ id: l.id, name: l.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  let scopedLeague: { id: string; name: string; groupName: string } | null = null;
+  // `?leagueId=` filter, validated to belong to the scoped Group. A foreign /
+  // stale id silently falls through to the Group-wide list.
+  let scopedLeague: { id: string; name: string } | null = null;
   let leagueFilter: string | null = null;
   if (input.leagueId !== undefined) {
     const league = leagueById.get(input.leagueId);
-    if (league && ownedGroupIds.has(league.groupId)) {
+    if (league !== undefined) {
       leagueFilter = league.id;
-      const groupName = groupNameById.get(league.groupId) ?? '';
-      scopedLeague = { id: league.id, name: league.name, groupName };
+      scopedLeague = { id: league.id, name: league.name };
     }
-    // Foreign / stale leagueId — silently fall through to cross-Group list.
   }
 
-  // `groupId` is honoured only when `leagueId` is absent. The League filter
-  // is stricter (one Group's worth of Matches) and the Group filter would be
-  // a no-op underneath it. Foreign / unknown ids silently drop.
-  const groupFilter: string | null =
-    leagueFilter === null && input.groupId !== undefined && ownedGroupIds.has(input.groupId)
-      ? input.groupId
-      : null;
+  const filteredMatches = matches.filter((m) => {
+    if (leagueFilter !== null && m.leagueId !== leagueFilter) return false;
+    return true;
+  });
 
-  const matches = perGroup
-    .flatMap((p) => p.matches)
-    .filter((m) => {
-      if (!ownedGroupIds.has(m.groupId)) return false;
-      if (leagueFilter !== null && m.leagueId !== leagueFilter) return false;
-      if (groupFilter !== null && m.groupId !== groupFilter) return false;
-      return true;
-    });
-
-  // Game count / last-played-at lookups — single pass over all owned Games.
+  // Game count / last-played-at lookups — single pass over the Group's Games.
   const gameCountByMatch = new Map<string, number>();
   const lastPlayedAtByMatch = new Map<string, string>();
-  for (const { games } of perGroup) {
-    for (const g of games) {
-      if (g.matchId === null) continue;
-      gameCountByMatch.set(g.matchId, (gameCountByMatch.get(g.matchId) ?? 0) + 1);
-      const prev = lastPlayedAtByMatch.get(g.matchId);
-      if (prev === undefined || g.playedAt > prev) {
-        lastPlayedAtByMatch.set(g.matchId, g.playedAt);
-      }
+  for (const g of games) {
+    if (g.matchId === null) continue;
+    gameCountByMatch.set(g.matchId, (gameCountByMatch.get(g.matchId) ?? 0) + 1);
+    const prev = lastPlayedAtByMatch.get(g.matchId);
+    if (prev === undefined || g.playedAt > prev) {
+      lastPlayedAtByMatch.set(g.matchId, g.playedAt);
     }
   }
 
-  const items: MatchListItem[] = matches.map(
+  const items: MatchListItem[] = filteredMatches.map(
     (m): MatchListItem => ({
       id: m.id,
       groupId: m.groupId,
-      groupName: groupNameById.get(m.groupId) ?? '',
       leagueId: m.leagueId,
       leagueName: m.leagueId === null ? null : (leagueNameById.get(m.leagueId) ?? null),
       name: m.name,
@@ -531,28 +526,21 @@ export const listMatchesHandler = async (
   );
 
   // League-scoped: sort by sequenceNumber desc (newest 節 first), undated trailing.
-  // Cross-Group: sort by heldAt / lastPlayedAt / createdAt desc.
+  // Group-wide: sort by heldAt / lastPlayedAt / createdAt desc.
   items.sort((a, b) => compareMatchListItems(a, b, leagueFilter !== null));
 
-  const createSearch: { leagueId?: string; groupId?: string } = {};
+  const createSearch: { leagueId?: string } = {};
   if (scopedLeague !== null) {
     createSearch.leagueId = scopedLeague.id;
-  } else if (groupFilter !== null) {
-    createSearch.groupId = groupFilter;
   }
 
-  // When scoped by Group (and not by League) surface the Group name in the
-  // header so the list reads "Group: 金曜定例会" instead of the cross-Group
-  // empty-state.
-  const groupScopedName: string | null =
-    leagueFilter === null && groupFilter !== null ? (groupNameById.get(groupFilter) ?? null) : null;
-
   return {
+    groupId: group.id,
+    groupName: group.name,
     matches: items,
     scope: {
       leagueId: scopedLeague?.id ?? null,
       leagueName: scopedLeague?.name ?? null,
-      groupName: scopedLeague?.groupName ?? groupScopedName,
       createSearch,
     },
     leagueOptions: leagueOptionRows,

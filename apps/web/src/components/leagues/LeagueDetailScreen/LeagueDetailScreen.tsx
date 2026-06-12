@@ -46,7 +46,7 @@ export const LeagueDetailScreen = ({ data, origin }: LeagueDetailScreenProps) =>
       <LeagueHeader data={data} origin={origin} />
       <RulesetCallout data={data} />
       <RankingSection ranking={data.ranking} />
-      <MatchesSection matches={data.matches} leagueId={data.id} />
+      <MatchesSection matches={data.matches} groupId={data.groupId} leagueId={data.id} />
       <RecentGamesSection games={data.recentGames} />
     </section>
   );

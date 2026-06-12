@@ -130,22 +130,24 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/matches/:matchId` |
+| パス | 一覧 `/groups/:groupId/matches`（`?leagueId=` で同一グループ内リーグに絞り込み）/ 詳細 `/groups/:groupId/matches/:matchId` |
 | 表示要素 | Match 名・開催日・メモ・適用 Ruleset / Match 内順位表 / 対局一覧 / 公開 URL |
 | 主な操作 | 対局追加 / Match 編集 / 公開 URL コピー |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=MatchList.html （`match-list` / `match-detail` 各 artboard） |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=MatchList.html |
+| 備考 | 一覧・作成・詳細はすべて Group 配下に統一（Issue #61）。`groupId` は URL パス起点で、横断（全グループ）一覧は廃止。`?leagueId=` は当該グループ内のリーグのみを許容するサーバー検証付き任意フィルタ。旧 `/matches`・`/matches/:matchId` はアクティブグループの一覧へリダイレクトする後方互換スタブ。 |
 
 ### S10. Match 作成
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/leagues/:leagueId/matches/new` または `/groups/:groupId/matches/new` |
+| パス | `/groups/:groupId/matches/new`（`?leagueId=` で同一グループ内リーグに事前ピン） |
 | 表示要素 | 名前 / 開催日（任意）/ メモ（任意）/ デフォルト Ruleset(任意) |
 | 主な操作 | 作成 |
-| 遷移先 | `/matches/:matchId` |
+| 遷移先 | `/groups/:groupId/matches/:matchId`（リーグ配下作成時はリーグ詳細へ戻る） |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=MatchCreate.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=MatchCreate.html |
+| 備考 | `groupId` は URL パス起点。作成時の Group はクライアント送信値ではなくパスから供給する。旧 `/matches/new` はアクティブグループ（または `?groupId=`）の作成画面へリダイレクト。 |
 
 ### S11. 対局結果入力
 
@@ -295,8 +297,8 @@ sidebar_position: 4
 |---|---|---|
 | `/` | Owner ダッシュボード | 要 |
 | `/login` | ログイン | 不要 |
-| `/groups`, `/groups/:groupId`, `/groups/:groupId/leagues`, `/groups/:groupId/leagues/:leagueId`, `/groups/:groupId/settings`, `/matches`, `/invitations` | Owner 用各機能（リーグ一覧 / 詳細は Group 配下に統一、Issue #60） | 要 |
-| `/leagues`, `/leagues/:leagueId` | 後方互換リダイレクト（アクティブグループの `/groups/:groupId/leagues` へ。アクティブグループ未選択時は `/groups` へ） | 要 |
+| `/groups`, `/groups/:groupId`, `/groups/:groupId/leagues`, `/groups/:groupId/leagues/:leagueId`, `/groups/:groupId/matches`, `/groups/:groupId/matches/new`, `/groups/:groupId/matches/:matchId`, `/groups/:groupId/settings`, `/invitations` | Owner 用各機能（リーグ・マッチとも Group 配下に統一、Issue #60 / #61） | 要 |
+| `/leagues`, `/leagues/:leagueId`, `/matches`, `/matches/new`, `/matches/:matchId` | 後方互換リダイレクト（アクティブグループの `/groups/:groupId/...` へ。アクティブグループ未選択時は `/groups` へ） | 要 |
 | `/invitations/accept/:token` | 招待受け入れ | 不要（トークン検証） |
 | `/l/:publicSlug` | League 公開ビュー | 不要 |
 | `/m/:publicSlug` | Match 公開ビュー（League 外） | 不要 |

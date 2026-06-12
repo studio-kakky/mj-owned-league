@@ -6,14 +6,15 @@
  * inactive in DIM (#888):
  *   - ホーム   (the active Group's S6 dashboard, `/groups/$activeGroupId`)
  *   - リーグ   (the active Group's S15 list, `/groups/$activeGroupId/leagues`)
- *   - マッチ   (`/matches`)
+ *   - マッチ   (the active Group's S9 list, `/groups/$activeGroupId/matches`)
  *   - 設定     (`/settings`)
  *
- * ホーム and リーグ are group-scoped (Issue #58 / #60): the nav only renders
- * once a Group has been entered, so its "home" is that Group's ダッシュボード
- * and "リーグ" is that Group's League list — not top-level routes. The caller
- * passes the resolved targets via {@link OwnerBottomNavProps.homeTo} /
- * {@link OwnerBottomNavProps.leaguesTo}.
+ * ホーム / リーグ / マッチ are group-scoped (Issue #58 / #60 / #61): the nav
+ * only renders once a Group has been entered, so "home" is that Group's
+ * ダッシュボード, "リーグ" is that Group's League list, and "マッチ" is that
+ * Group's Match list — not top-level routes. The caller passes the resolved
+ * targets via {@link OwnerBottomNavProps.homeTo} /
+ * {@link OwnerBottomNavProps.leaguesTo} / {@link OwnerBottomNavProps.matchesTo}.
  *
  * The `to` props are typed as `string` (not the generated route literal
  * union) so the nav can link to routes that may not yet be mounted; until a
@@ -48,13 +49,19 @@ export interface OwnerBottomNavProps {
    * {@link OwnerBottomNavProps.homeTo}.
    */
   leaguesTo: string;
+  /**
+   * Destination for the マッチ tab — the active Group's S9 Match 一覧
+   * (`/groups/$activeGroupId/matches`). Same fallback rationale as
+   * {@link OwnerBottomNavProps.homeTo}.
+   */
+  matchesTo: string;
 }
 
-export const OwnerBottomNav = ({ homeTo, leaguesTo }: OwnerBottomNavProps) => {
+export const OwnerBottomNav = ({ homeTo, leaguesTo, matchesTo }: OwnerBottomNavProps) => {
   const navItems: ReadonlyArray<OwnerBottomNavItem> = [
     { label: 'ホーム', to: homeTo, exact: true, Icon: HomeIcon },
     { label: 'リーグ', to: leaguesTo, Icon: TrophyIcon },
-    { label: 'マッチ', to: '/matches', Icon: RectangleStackIcon },
+    { label: 'マッチ', to: matchesTo, Icon: RectangleStackIcon },
     { label: '設定', to: '/settings', Icon: Cog6ToothIcon },
   ];
 
