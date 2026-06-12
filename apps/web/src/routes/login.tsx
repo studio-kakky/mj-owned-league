@@ -32,11 +32,13 @@
  *
  * Sign-in flow:
  *   1. User taps "Google で続ける" → `signIn.social({ provider: 'google',
- *      callbackURL: '/' })`.
+ *      callbackURL: '/groups' })`.
  *   2. Better Auth redirects the browser to Google's consent screen.
  *   3. Google redirects back to `/api/auth/callback/google`; Better Auth
  *      sets the session cookie and forwards to `callbackURL`.
- *   4. `/` (the Owner dashboard) renders with an authenticated session.
+ *   4. `/groups` (the group-selection screen, Issue #58) renders with an
+ *      authenticated session. The Owner picks a Group to enter, which lands
+ *      them on that Group's S6 ホーム.
  *
  * Error handling is intentionally minimal: if `signIn.social` itself
  * throws (network failure before the redirect happens) we surface a
@@ -61,8 +63,10 @@ const LoginPage = () => {
     setPending(true);
     try {
       // `callbackURL` is what Better Auth navigates to *after* it sets the
-      // session cookie. `/` is the Owner dashboard (S3).
-      await signIn.social({ provider: 'google', callbackURL: '/' });
+      // session cookie. `/groups` is the group-selection screen (Issue #58):
+      // the Owner picks (or confirms) which Group to enter, and `/` itself
+      // redirects there too, so this keeps the post-login landing consistent.
+      await signIn.social({ provider: 'google', callbackURL: '/groups' });
       // If `signIn.social` returns without redirecting (it shouldn't in a
       // browser context, but be defensive) leave `isPending = true` —
       // resetting it would briefly re-enable the button.
@@ -153,12 +157,13 @@ const LoginPage = () => {
 };
 
 export const Route = createFileRoute('/login')({
-  // Bounce already-authenticated owners straight to the home dashboard (S3).
-  // This mirrors `_owner.tsx`'s gate, inverted: `_owner` redirects *un*authed
-  // users to `/login`; here we redirect *authed* users away from `/login` so
-  // landing on the sign-in page with a live session never strands them. It
-  // also covers the post-OAuth return path — even if Better Auth ever lands
-  // the callback back on `/login`, the live session forwards them to `/`.
+  // Bounce already-authenticated owners straight to the group-selection
+  // screen (`/groups`, Issue #58). This mirrors `_owner.tsx`'s gate, inverted:
+  // `_owner` redirects *un*authed users to `/login`; here we redirect *authed*
+  // users away from `/login` so landing on the sign-in page with a live
+  // session never strands them. It also covers the post-OAuth return path —
+  // even if Better Auth ever lands the callback back on `/login`, the live
+  // session forwards them to `/groups`.
   //
   // Failure mode: if the session probe itself throws (network / Worker
   // offline) we swallow it and render the login page — the user is here to
@@ -174,7 +179,7 @@ export const Route = createFileRoute('/login')({
     }
 
     if (user) {
-      throw redirect({ to: '/' });
+      throw redirect({ to: '/groups' });
     }
   },
   component: LoginPage,

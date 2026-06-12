@@ -30,6 +30,7 @@ import type {
   Invitation,
   League,
   Match,
+  Owner,
   Player,
   Ruleset,
 } from '../db/schema';
@@ -40,12 +41,47 @@ import type {
   InvitationRepository,
   LeagueRepository,
   MatchRepository,
+  OwnerRepository,
   PlayerRepository,
   RulesetRepository,
 } from '../repositories/interfaces';
 import { type GroupServerStore, gameResultKey, type InMemoryStoreShape } from './groups-store';
 
 type UpdateInput<T> = Partial<Omit<T, 'id'>>;
+
+export class MemoryOwnerRepository implements OwnerRepository {
+  constructor(private readonly store: GroupServerStore) {}
+
+  async findById(id: string): Promise<Owner | null> {
+    return this.store.owners.get(id) ?? null;
+  }
+
+  async findByEmail(email: string): Promise<Owner | null> {
+    return [...this.store.owners.values()].find((o) => o.email === email) ?? null;
+  }
+
+  async create(input: InMemoryStoreShape['owners']): Promise<Owner> {
+    const row: Owner = {
+      activeGroupId: null,
+      createdAt: new Date().toISOString(),
+      ...input,
+    } as Owner;
+    this.store.owners.set(row.id, row);
+    return row;
+  }
+
+  async update(id: string, input: UpdateInput<Owner>): Promise<Owner | null> {
+    const existing = this.store.owners.get(id);
+    if (!existing) return null;
+    const next = { ...existing, ...input };
+    this.store.owners.set(id, next);
+    return next;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.store.owners.delete(id);
+  }
+}
 
 export class MemoryGroupRepository implements GroupRepository {
   constructor(private readonly store: GroupServerStore) {}

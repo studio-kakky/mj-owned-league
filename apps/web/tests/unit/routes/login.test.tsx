@@ -31,16 +31,24 @@ vi.mock('../../../src/auth/client', () => ({
 // of already-authenticated owners). That module imports `cloudflare:workers`,
 // which vitest/jsdom cannot resolve — and these tests only exercise the
 // component, never `beforeLoad`. Stubbing it keeps the import graph clean.
+const getSession = vi.fn();
 vi.mock('../../../src/server/session', () => ({
-  getSessionServerFn: vi.fn(),
+  getSessionServerFn: (...args: unknown[]) => getSession(...args),
 }));
 
 // `createFileRoute` is a registration call with side effects on the
 // router. For the component-only tests we don't need it to actually
 // register anything — the file already imports the React component we
 // care about.
+class RedirectSentinel extends Error {
+  constructor(public readonly target: { to: string }) {
+    super(`redirect:${target.to}`);
+  }
+}
+
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: { component: unknown }) => ({ ...config }),
+  redirect: (target: { to: string }) => new RedirectSentinel(target),
 }));
 
 // Importing after the mocks so they take effect.
@@ -87,7 +95,8 @@ describe('LoginPage (S1)', () => {
     fireEvent.click(screen.getByTestId('login-google-button'));
 
     expect(signInSocial).toHaveBeenCalledTimes(1);
-    expect(signInSocial).toHaveBeenCalledWith({ provider: 'google', callbackURL: '/' });
+    // Issue #58: post-login landing is the group-selection screen.
+    expect(signInSocial).toHaveBeenCalledWith({ provider: 'google', callbackURL: '/groups' });
   });
 
   it('disables the button and shows pending copy while signing in', () => {
@@ -127,5 +136,29 @@ describe('LoginPage (S1)', () => {
     expect(screen.getByTestId('login-error')).toHaveTextContent(
       'サインインを開始できませんでした。時間をおいて再度お試しください。',
     );
+  });
+});
+
+describe('login beforeLoad (Issue #58)', () => {
+  const beforeLoad = (Route as unknown as { beforeLoad: () => Promise<unknown> }).beforeLoad;
+
+  beforeEach(() => {
+    getSession.mockReset();
+  });
+
+  it('redirects an already-authenticated owner to /groups', async () => {
+    getSession.mockResolvedValueOnce({ id: 'o1', name: 'Owner', email: 'o@example.com' });
+
+    await expect(beforeLoad()).rejects.toMatchObject({ target: { to: '/groups' } });
+  });
+
+  it('stays on the login page (no redirect) when there is no session', async () => {
+    getSession.mockResolvedValueOnce(null);
+    await expect(beforeLoad()).resolves.toBeUndefined();
+  });
+
+  it('stays on the login page when the session probe throws', async () => {
+    getSession.mockRejectedValueOnce(new Error('worker offline'));
+    await expect(beforeLoad()).resolves.toBeUndefined();
   });
 });

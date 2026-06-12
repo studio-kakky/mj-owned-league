@@ -146,4 +146,41 @@ describe('GroupsScreen', () => {
       });
     });
   });
+
+  describe('select flow (Issue #58)', () => {
+    it('renders an "enter group" trigger per card when onSelectGroup is provided', () => {
+      render(<GroupsScreen groups={items} {...noopHandlers} onSelectGroup={() => {}} />);
+      expect(screen.getByTestId('groups-select-trigger-g1')).toBeInTheDocument();
+      expect(screen.getByTestId('groups-select-trigger-g2')).toBeInTheDocument();
+    });
+
+    it('does not render select triggers when onSelectGroup is omitted', () => {
+      render(<GroupsScreen groups={items} {...noopHandlers} />);
+      expect(screen.queryByTestId('groups-select-trigger-g1')).not.toBeInTheDocument();
+    });
+
+    it('invokes onSelectGroup with the group id when the card is tapped', () => {
+      const onSelectGroup = vi.fn();
+      render(<GroupsScreen groups={items} {...noopHandlers} onSelectGroup={onSelectGroup} />);
+
+      fireEvent.click(screen.getByTestId('groups-select-trigger-g1'));
+      expect(onSelectGroup).toHaveBeenCalledWith('g1');
+    });
+
+    it('does not select when the edit button is tapped (no click competition)', () => {
+      const onSelectGroup = vi.fn();
+      render(<GroupsScreen groups={items} {...noopHandlers} onSelectGroup={onSelectGroup} />);
+
+      fireEvent.click(screen.getByTestId('groups-edit-trigger-g1'));
+      expect(onSelectGroup).not.toHaveBeenCalled();
+    });
+
+    it('does not select when the delete button is tapped (no click competition)', () => {
+      const onSelectGroup = vi.fn();
+      render(<GroupsScreen groups={items} {...noopHandlers} onSelectGroup={onSelectGroup} />);
+
+      fireEvent.click(screen.getByTestId('groups-delete-trigger-g2'));
+      expect(onSelectGroup).not.toHaveBeenCalled();
+    });
+  });
 });

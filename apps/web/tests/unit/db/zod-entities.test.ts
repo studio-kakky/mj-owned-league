@@ -45,6 +45,9 @@ describe('drizzle-zod domain schemas', () => {
       selectOwnerSchema.safeParse({
         id: 'o1',
         email: 'a@example.com',
+        // `activeGroupId` is nullable but a present key on the select row
+        // (Issue #58). drizzle-zod models it as `.nullable()`, not `.optional()`.
+        activeGroupId: null,
         createdAt: '2026-05-15T00:00:00.000Z',
       }).success,
     ).toBe(true);

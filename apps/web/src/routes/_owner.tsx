@@ -17,31 +17,72 @@
  *   Worker offline), we err on the side of redirecting to `/login`. Better
  *   to show the sign-in page than to render a half-broken Owner shell.
  *
- * Session / active-group wiring — current status:
- *   `beforeLoad` returns the raw Better Auth session shape, but the active
- *   group and the full group list still need a dedicated loader. So
- *   `OwnerShell` is still rendered with `activeGroup: null` /
- *   `groups: null`; only the `session` prop is now populated. Wiring active
- *   group is a follow-up issue.
+ * Session / active-group wiring (Issue #58):
+ *   `beforeLoad` now resolves the full group list and the persisted active
+ *   group alongside the session. The group list comes from
+ *   `listGroupsServerFn()`; the active group from `getActiveGroupServerFn()`,
+ *   which returns the Owner's stored `activeGroupId`. We reconcile that id
+ *   against the live list here — a dangling id (the active Group was deleted
+ *   out from under a stale session) resolves to `null` ("no selection"), which
+ *   matches the schema's `onDelete: 'set null'` intent for the in-memory path
+ *   and defends the D1 path where `ALTER TABLE ADD COLUMN` cannot carry the FK
+ *   action.
+ *
+ *   The selection callback lives in the component (it needs the router): it
+ *   persists the choice via `setActiveGroupServerFn`, navigates to the Group's
+ *   S6 ホーム, then invalidates so the header re-reads the new active group.
  */
 
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router';
+import { useCallback } from 'react';
 import { OwnerShell } from '../components/layout';
-import type { OwnerSession } from '../components/layout/types';
+import type { GroupSummary, OwnerSession } from '../components/layout/types';
+import { getActiveGroupServerFn, setActiveGroupServerFn } from '../server/active-group';
+import { listGroupsServerFn } from '../server/groups';
 import { getSessionServerFn } from '../server/session';
 
 const OwnerLayout = () => {
-  const { ownerSession } = Route.useRouteContext();
+  const router = useRouter();
+  const navigate = useNavigate();
+  const { ownerSession, groups, activeGroup } = Route.useRouteContext();
+
+  // The bottom nav links to group-scoped destinations, so it is hidden on the
+  // group-selection screen (`/groups`) and shown once a group has been entered
+  // (`/groups/$groupId` and every other Owner page).
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const showBottomNav = pathname !== '/groups';
+
+  const handleSelectGroup = useCallback(
+    async (groupId: string) => {
+      const result = await setActiveGroupServerFn({ data: { groupId } });
+      if (!result.ok) {
+        // Stale id (the Group vanished / is not ours). Re-read so the header
+        // and switcher reflect the real list instead of navigating blindly.
+        await router.invalidate();
+        return;
+      }
+      await navigate({ to: '/groups/$groupId', params: { groupId } });
+      // Invalidate so the layout's `beforeLoad` re-runs and the header shows
+      // the newly-selected group as active on the next render.
+      await router.invalidate();
+    },
+    [router, navigate],
+  );
 
   return (
     <OwnerShell
       session={ownerSession}
-      activeGroup={null}
-      groups={null}
-      onSelectGroup={() => {
-        // No-op until the layout receives a real list of groups; see the
-        // "Session / active-group wiring" note above.
-      }}
+      activeGroup={activeGroup}
+      groups={groups}
+      onSelectGroup={handleSelectGroup}
+      showBottomNav={showBottomNav}
     >
       <Outlet />
     </OwnerShell>
@@ -73,7 +114,25 @@ export const Route = createFileRoute('/_owner')({
       displayName: user.name.trim().length ? user.name : (user.email.split('@')[0] ?? 'Owner'),
     };
 
-    return { ownerSession };
+    // Resolve the group list + active group for the shell header / switcher.
+    // Both are server functions that run server-side during SSR and as RPCs on
+    // client navigations, so the cookie-backed session is always available.
+    const [groupItems, activeGroupId] = await Promise.all([
+      listGroupsServerFn(),
+      getActiveGroupServerFn(),
+    ]);
+
+    const groups: ReadonlyArray<GroupSummary> = groupItems.map((g) => ({
+      id: g.id,
+      name: g.name,
+    }));
+
+    // Reconcile the stored id against the live list. A dangling id resolves to
+    // null ("no selection") so the header never points at a missing Group.
+    const activeGroup: GroupSummary | null =
+      activeGroupId === null ? null : (groups.find((g) => g.id === activeGroupId) ?? null);
+
+    return { ownerSession, groups, activeGroup };
   },
   component: OwnerLayout,
 });

@@ -95,6 +95,7 @@ import { type GroupServerStore, gameResultKey, getGroupServerStore } from './gro
 
 /** Builds an empty store snapshot (only the Maps the public helpers read). */
 const emptySnapshot = (): GroupServerStore => ({
+  owners: new Map(),
   groups: new Map(),
   rulesets: new Map(),
   games: new Map(),

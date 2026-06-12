@@ -66,6 +66,14 @@ const TrashIcon = () => (
 export interface GroupsScreenProps {
   groups: ReadonlyArray<GroupListItem>;
   /**
+   * Called when the user picks a Group to enter (selects it as the active
+   * group). Receives the target Group's id. The route handler persists the
+   * selection and navigates to the Group's S6 ホーム. Optional so existing
+   * call-sites / tests that only exercise CRUD keep working; when omitted the
+   * card body is not an interactive "enter" target.
+   */
+  onSelectGroup?: (groupId: string) => void | Promise<void>;
+  /**
    * Called when the user submits the create modal. Receives the trimmed
    * Group name; the screen does not pre-generate ids. Should resolve once
    * the new Group is persisted (the modal stays open until it does).
@@ -92,6 +100,7 @@ type ModalState =
 
 export const GroupsScreen = ({
   groups,
+  onSelectGroup,
   onCreateGroup,
   onRenameGroup,
   onDeleteGroup,
@@ -143,18 +152,49 @@ export const GroupsScreen = ({
               data-testid={`groups-list-item-${group.id}`}
               className="flex items-center gap-3 border-t border-[#1F1F1F] px-5 py-3.5 [&:last-child]:border-b"
             >
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#262626] bg-[#1F1F1F] text-base font-semibold text-[#888888]">
-                {group.name.trim().charAt(0) || '?'}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="mb-0.5 truncate text-[15px] font-medium text-[#FAFAF8]">
-                  {group.name}
-                </p>
-                <p className="truncate text-xs text-[#666666]">
-                  プレイヤー {group.playerCount} 人 · リーグ {group.leagueCount} · 最終対局{' '}
-                  {group.lastPlayedAt === null ? '未対局' : formatDate(group.lastPlayedAt)}
-                </p>
-              </div>
+              {/* "Enter group" target — selecting it as the active group and
+                  navigating to its S6 ホーム. Rendered as a dedicated button
+                  (a sibling of the edit/delete buttons, not their ancestor) so
+                  there is no click-propagation competition between selecting
+                  and the per-row icon actions. Falls back to a plain,
+                  non-interactive block when `onSelectGroup` is not wired. */}
+              {onSelectGroup ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectGroup(group.id)}
+                  data-testid={`groups-select-trigger-${group.id}`}
+                  aria-label={`${group.name} に入る`}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#262626] bg-[#1F1F1F] text-base font-semibold text-[#888888]">
+                    {group.name.trim().charAt(0) || '?'}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="mb-0.5 block truncate text-[15px] font-medium text-[#FAFAF8]">
+                      {group.name}
+                    </span>
+                    <span className="block truncate text-xs text-[#666666]">
+                      プレイヤー {group.playerCount} 人 · リーグ {group.leagueCount} · 最終対局{' '}
+                      {group.lastPlayedAt === null ? '未対局' : formatDate(group.lastPlayedAt)}
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#262626] bg-[#1F1F1F] text-base font-semibold text-[#888888]">
+                    {group.name.trim().charAt(0) || '?'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="mb-0.5 truncate text-[15px] font-medium text-[#FAFAF8]">
+                      {group.name}
+                    </p>
+                    <p className="truncate text-xs text-[#666666]">
+                      プレイヤー {group.playerCount} 人 · リーグ {group.leagueCount} · 最終対局{' '}
+                      {group.lastPlayedAt === null ? '未対局' : formatDate(group.lastPlayedAt)}
+                    </p>
+                  </div>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setModal({ kind: 'edit', group })}

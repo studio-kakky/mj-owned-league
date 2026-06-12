@@ -49,10 +49,10 @@ sidebar_position: 4
 
 | 項目 | 内容 |
 |---|---|
-| パス | `/` |
+| パス | （現状未配線。`/` は `/groups` へリダイレクト） |
 | 表示要素 | 直近の対局 / アクティブな League・Match のサマリ / 自分の Group 一覧（カード） / 未使用の招待件数 |
 | 主な操作 | 各 Group / League / Match / 対局入力 / 招待管理への遷移 |
-| 備考 | ログイン後の初期遷移先。直近活動を俯瞰するハブ。未認証で `/` にアクセスした場合は `/login` へリダイレクト。 |
+| 備考 | 全体（横断）ダッシュボード。ログイン後の初期遷移先は **S4 グループ選択（`/groups`）** に変更され、グループ選択後は当該グループの **S6 グループホーム** をホームとして使う（Issue #58）。`/` は `/groups` へリダイレクトし、本画面は現状未参照（コンポーネント自体は削除せず温存）。未認証で `/` にアクセスした場合は `/login` へリダイレクト。 |
 | デザイン | （未設計） |
 
 ### S4. Group 一覧
@@ -61,9 +61,11 @@ sidebar_position: 4
 |---|---|
 | パス | `/groups` |
 | 表示要素 | 自分の Group のカード/リスト（Group 名・Player 数・直近対局日・リーグ数） |
-| 主な操作 | Group 作成 / Group 詳細へ遷移 |
+| 主な操作 | Group 作成 / Group 選択（カードから「グループに入る」） |
+| 遷移先 | Group 選択時: 当該 Group をアクティブグループとして保存（`owners.activeGroupId`）し `/groups/:groupId`（S6）へ遷移 |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Groups.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Groups.html |
+| 備考 | ログイン後の初期遷移先（グループ選択画面）。この画面ではボトムナビを非表示にする（Issue #58）。 |
 
 ### S5. Group 作成
 
@@ -84,7 +86,7 @@ sidebar_position: 4
 | パス | `/groups/:groupId` |
 | 表示要素 | Group 通算成績 / 直近対局 / アクティブな League・Match のサマリ / League 一覧と Match 一覧へのリンク |
 | 主な操作 | League 一覧（S15）/ Match 作成（S10）/ 対局追加 / Settings（S16）への遷移 |
-| 備考 | プレイヤー管理 / Ruleset 管理は Settings 画面（S16）に分離した。本画面は俯瞰ハブとして機能する。 |
+| 備考 | プレイヤー管理 / Ruleset 管理は Settings 画面（S16）に分離した。本画面は俯瞰ハブとして機能する。**グループ選択後のホーム（ダッシュボード）**であり、ボトムナビの「ホーム」はここを指す（Issue #58）。グループ一覧への「一覧へ」リンクは廃止し、グループ切替はヘッダーのグループスイッチャーに統一した。ルートはファイル名 `groups_.$groupId`（末尾アンダースコア）で S4 一覧ルートから un-nest しており、`/groups`（一覧）とは独立したページとして描画される。 |
 
 タブ:
 
@@ -271,7 +273,7 @@ sidebar_position: 4
 | 役割 | ホーム / リーグ / マッチ / 設定のナビ + グループ切替シート |
 | デザイン | https://claude.ai/design/p/019e0012-e589-7cb5-bc57-6e0e4c8363b8?file=Header_Footer.html |
 | デザイン (Claude) | https://api.anthropic.com/v1/design/h/DKlPUg6Gcv6fEwzc2YSbOQ?open_file=Header_Footer.html |
-| 備考 | 全 Owner 画面で共有するシェル。実装時はレイアウトコンポーネントとして抽出する想定。 |
+| 備考 | 全 Owner 画面で共有するシェル（`OwnerShell`）。**ボトムナビはグループ選択後のページでのみ表示**し、グループ選択画面（S4 `/groups`）では非表示にする（ナビの遷移先がアクティブグループ前提のため）。ナビの「ホーム」はトップレベル `/` ではなく、**選択中グループの S6 ダッシュボード（`/groups/:groupId`）** を指す。グループ切替はヘッダーのグループスイッチャー（`GroupSwitcherSheet`）から行う（Issue #58）。 |
 
 ---
 
