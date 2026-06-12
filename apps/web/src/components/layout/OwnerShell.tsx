@@ -75,7 +75,10 @@ export const OwnerShell = ({
       </main>
 
       {showBottomNav ? (
-        <OwnerBottomNav homeTo={activeGroup ? `/groups/${activeGroup.id}` : '/groups'} />
+        <OwnerBottomNav
+          homeTo={activeGroup ? `/groups/${activeGroup.id}` : '/groups'}
+          leaguesTo={activeGroup ? `/groups/${activeGroup.id}/leagues` : '/groups'}
+        />
       ) : null}
 
       <GroupSwitcherSheet

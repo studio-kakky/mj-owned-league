@@ -5,14 +5,15 @@
  * destinations, Heroicons outline glyphs, active tab in FG (#FAFAF8) and
  * inactive in DIM (#888):
  *   - ホーム   (the active Group's S6 dashboard, `/groups/$activeGroupId`)
- *   - リーグ   (`/leagues`)
+ *   - リーグ   (the active Group's S15 list, `/groups/$activeGroupId/leagues`)
  *   - マッチ   (`/matches`)
  *   - 設定     (`/settings`)
  *
- * ホーム is group-scoped (Issue #58): the nav only renders once a Group has
- * been entered, so its "home" is that Group's ダッシュボード — not the
- * top-level `/`, which merely redirects back to the group-selection screen.
- * The caller passes the resolved target via {@link OwnerBottomNavProps.homeTo}.
+ * ホーム and リーグ are group-scoped (Issue #58 / #60): the nav only renders
+ * once a Group has been entered, so its "home" is that Group's ダッシュボード
+ * and "リーグ" is that Group's League list — not top-level routes. The caller
+ * passes the resolved targets via {@link OwnerBottomNavProps.homeTo} /
+ * {@link OwnerBottomNavProps.leaguesTo}.
  *
  * The `to` props are typed as `string` (not the generated route literal
  * union) so the nav can link to routes that may not yet be mounted; until a
@@ -41,12 +42,18 @@ export interface OwnerBottomNavProps {
    * visible but keeps the link safe.
    */
   homeTo: string;
+  /**
+   * Destination for the リーグ tab — the active Group's S15 League 一覧
+   * (`/groups/$activeGroupId/leagues`). Same fallback rationale as
+   * {@link OwnerBottomNavProps.homeTo}.
+   */
+  leaguesTo: string;
 }
 
-export const OwnerBottomNav = ({ homeTo }: OwnerBottomNavProps) => {
+export const OwnerBottomNav = ({ homeTo, leaguesTo }: OwnerBottomNavProps) => {
   const navItems: ReadonlyArray<OwnerBottomNavItem> = [
     { label: 'ホーム', to: homeTo, exact: true, Icon: HomeIcon },
-    { label: 'リーグ', to: '/leagues', Icon: TrophyIcon },
+    { label: 'リーグ', to: leaguesTo, Icon: TrophyIcon },
     { label: 'マッチ', to: '/matches', Icon: RectangleStackIcon },
     { label: '設定', to: '/settings', Icon: Cog6ToothIcon },
   ];

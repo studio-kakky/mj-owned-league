@@ -13,7 +13,6 @@ import {
   getGroupServerStore,
   resetGroupServerStoreForTests,
 } from '../../../src/server/groups-store';
-import { listLeaguesHandler } from '../../../src/server/leagues';
 import {
   computeNextSequenceNumber,
   createMatchHandler,
@@ -54,7 +53,7 @@ describe('getMatchCreateContextHandler', () => {
   it('pins to the supplied League and auto-allocates the next sequenceNumber', async () => {
     // The dev seed materialises one Match in the spring league with
     // sequenceNumber=1. Pinning the context to that league should preview "2".
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const target = seeded.leagues[0];
     if (!target) throw new Error('expected a seeded league');
 
@@ -70,7 +69,7 @@ describe('getMatchCreateContextHandler', () => {
 
   it('silently drops a foreign leagueId (returns null initial values, not an error)', async () => {
     // Seed the other owner first, then try to pin as `owner`.
-    const other = await listLeaguesHandler({ ownerId: otherOwner });
+    const other = await getMatchCreateContextHandler({ ownerId: otherOwner });
     const foreignLeague = other.leagues[0];
     if (!foreignLeague) throw new Error('expected a seeded league for the other owner');
 
@@ -87,7 +86,7 @@ describe('getMatchCreateContextHandler', () => {
   });
 
   it('honours an explicit groupId when supplied and league context is absent', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const groupId = seeded.groups[seeded.groups.length - 1]?.id;
     if (!groupId) throw new Error('expected at least one seeded group');
 
@@ -99,7 +98,7 @@ describe('getMatchCreateContextHandler', () => {
 
 describe('createMatchHandler', () => {
   it('persists a Match under a League and auto-numbers it', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const targetLeague = seeded.leagues[0];
     if (!targetLeague) throw new Error('expected a seeded league');
 
@@ -121,7 +120,7 @@ describe('createMatchHandler', () => {
   });
 
   it('persists a League-less Match (cross-group) with sequenceNumber=null', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const ownGroup = seeded.groups[0];
     if (!ownGroup) throw new Error('expected a seeded group');
 
@@ -140,7 +139,7 @@ describe('createMatchHandler', () => {
   });
 
   it('rejects creation when the Group belongs to a different Owner', async () => {
-    const other = await listLeaguesHandler({ ownerId: otherOwner });
+    const other = await getMatchCreateContextHandler({ ownerId: otherOwner });
     const foreignGroup = other.groups[0];
     if (!foreignGroup) throw new Error('expected a foreign group');
 
@@ -158,7 +157,7 @@ describe('createMatchHandler', () => {
   });
 
   it('rejects a leagueId that does not belong to the chosen Group', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const otherGroup = seeded.groups.find((g) => g.name === '会社の同期会');
     const targetLeague = seeded.leagues[0];
     if (!otherGroup || !targetLeague) throw new Error('expected two distinct seeded groups');
@@ -177,7 +176,7 @@ describe('createMatchHandler', () => {
   });
 
   it('rejects a defaultRulesetId that does not belong to the chosen Group', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
     const ownGroup = seeded.groups[0];
     if (!ownGroup) throw new Error('expected a seeded group');
     const foreignRuleset = seeded.rulesets.find((r) => r.groupId !== ownGroup.id);

@@ -13,8 +13,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   getGroupServerStore,
   resetGroupServerStoreForTests,
+  seedDevDataIfEmpty,
 } from '../../../src/server/groups-store';
-import { listLeaguesHandler } from '../../../src/server/leagues';
 import {
   getPublicLeagueHandler,
   getPublicLeagueMatchHandler,
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 const ensureSeed = async (): Promise<{ publicSlug: string }> => {
-  await listLeaguesHandler({ ownerId: owner });
+  seedDevDataIfEmpty(owner);
   const store = getGroupServerStore();
   const league = [...store.leagues.values()].find((l) => l.name === '2026 春シーズン');
   if (!league) throw new Error('expected seeded league');

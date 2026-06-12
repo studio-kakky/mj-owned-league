@@ -136,14 +136,21 @@ const makeRepos = (db?: Database): ServerRepos => {
 
 const listLeaguesInput = z.object({
   /**
-   * Optional Group filter. When supplied, the response is narrowed to the
-   * Leagues / Rulesets that belong to that Group. Foreign or unknown ids
-   * silently fall through to the cross-Group response so a stale deep link
-   * (e.g. from S6 Group 詳細 after a Group rename / delete) does not 4xx.
+   * The Group whose Leagues to list. Required since Issue #60: the list lives
+   * at `/groups/:groupId/leagues`, so `groupId` always comes from the URL
+   * path. There is no cross-Group fallback — a foreign / unknown id resolves
+   * to `null` (the route redirects to `/groups`).
    */
-  groupId: z.string().min(1).optional(),
+  groupId: z.string().min(1),
 });
 const leagueDetailInput = z.object({
+  /**
+   * The Group the detail page is scoped to (from the URL path). The handler
+   * verifies the target League actually belongs to this Group so a League id
+   * pasted under the wrong Group namespace resolves to `null` rather than
+   * silently rendering under a Group it does not belong to.
+   */
+  groupId: z.string().min(1),
   leagueId: z.string().min(1),
 });
 const createLeagueInput = z.object({
@@ -278,76 +285,66 @@ const compareMatchRows = (a: LeagueMatchRow, b: LeagueMatchRow): number => {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the full S7 / S15 payload: every League owned by the caller (cross-
- * Group) plus the create-modal's Group / Ruleset options. Ownership is
- * enforced by intersecting League.groupId with the caller's Groups; this
- * matches what the future server-side session read will narrow further.
+ * Returns the S15 payload for a single Group: the Group's Leagues plus the
+ * create-modal's Group / Ruleset options. The `groupId` is required (it comes
+ * from the URL path) — there is no cross-Group fallback.
  *
- * Bundling the modal options into the same response keeps the page on a
- * single round trip — see the comment on {@link LeagueListData}.
+ * Returns `null` when the Group does not exist or is owned by a different
+ * Owner; the route surfaces that as a redirect to `/groups`. Ownership is the
+ * server's responsibility: we never trust the path `groupId` on the wire even
+ * though the UI only links to the Owner's own Groups.
+ *
+ * Bundling the modal options into the same response keeps the page on a single
+ * round trip — see the comment on {@link LeagueListData}. The Group dropdown
+ * collapses to the single scoped Group, so the create form is effectively
+ * locked to the Group in the path.
  */
 export const listLeaguesHandler = async (
   input: ListLeaguesInput,
   db?: Database,
-): Promise<LeagueListData> => {
+): Promise<LeagueListData | null> => {
   if (!db) seedDevDataIfEmpty(input.ownerId);
   const repos = makeRepos(db);
 
-  const ownedGroups = await repos.groups.listByOwner(input.ownerId);
-  const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
-  const groupNameById = new Map(ownedGroups.map((g) => [g.id, g.name] as const));
+  // Ownership guard: the Group must exist and belong to the caller. A foreign
+  // / unknown id resolves to `null` (the route redirects to `/groups`).
+  const group = await repos.groups.findById(input.groupId);
+  if (group === null || group.ownerId !== input.ownerId) return null;
 
-  // When the caller supplied `groupId` and the Group is owned by them, narrow
-  // every projection below to that Group. Foreign / stale ids silently fall
-  // through (the caller's link is busted, but the page is still usable).
-  const scopedGroupId =
-    input.groupId !== undefined && ownedGroupIds.has(input.groupId) ? input.groupId : null;
+  // Gather Leagues / Matches / Games / Rulesets / Players for the scoped Group
+  // through the repositories. Works identically against the in-memory store
+  // and D1.
+  const [groupLeagues, matches, games, groupRulesets, players] = await Promise.all([
+    repos.leagues.listByGroup(group.id),
+    repos.matches.listByGroup(group.id),
+    repos.games.listByGroup(group.id),
+    repos.rulesets.listByGroup(group.id),
+    repos.players.listByGroup(group.id),
+  ]);
 
-  const scopedGroups = ownedGroups.filter((g) => scopedGroupId === null || g.id === scopedGroupId);
-
-  // Gather Leagues / Matches / Games / Rulesets / Players per (scoped) owned
-  // Group through the repositories. Works identically against the in-memory
-  // store and D1.
-  const perGroup = await Promise.all(
-    scopedGroups.map(async (group) => {
-      const [leagues, matches, games, rulesets, players] = await Promise.all([
-        repos.leagues.listByGroup(group.id),
-        repos.matches.listByGroup(group.id),
-        repos.games.listByGroup(group.id),
-        repos.rulesets.listByGroup(group.id),
-        repos.players.listByGroup(group.id),
-      ]);
-      return { group, leagues, matches, games, rulesets, players };
-    }),
-  );
-
+  const activePlayerCount = players.filter((p) => p.isActive).length;
+  const groupNameMap = new Map([[group.id, group.name] as const]);
   const items: LeagueListItem[] = [];
-  for (const { group, leagues: groupLeagues, matches, games, players } of perGroup) {
-    const activePlayerCount = players.filter((p) => p.isActive).length;
-    for (const league of groupLeagues) {
-      let matchCount = 0;
-      for (const m of matches) {
-        if (m.leagueId === league.id) matchCount++;
-      }
-      let gameCount = 0;
-      let lastPlayedAt: string | null = null;
-      for (const g of games) {
-        if (g.leagueId !== league.id) continue;
-        gameCount++;
-        if (lastPlayedAt === null || g.playedAt > lastPlayedAt) lastPlayedAt = g.playedAt;
-      }
-      items.push(
-        projectListItem(
-          league,
-          { matchCount, gameCount, lastPlayedAt, activePlayerCount },
-          new Map([[group.id, group.name] as const]),
-        ),
-      );
+  for (const league of groupLeagues) {
+    let matchCount = 0;
+    for (const m of matches) {
+      if (m.leagueId === league.id) matchCount++;
     }
+    let gameCount = 0;
+    let lastPlayedAt: string | null = null;
+    for (const g of games) {
+      if (g.leagueId !== league.id) continue;
+      gameCount++;
+      if (lastPlayedAt === null || g.playedAt > lastPlayedAt) lastPlayedAt = g.playedAt;
+    }
+    items.push(
+      projectListItem(
+        league,
+        { matchCount, gameCount, lastPlayedAt, activePlayerCount },
+        groupNameMap,
+      ),
+    );
   }
-  // `groupNameById` is unused per-item now (each card resolves its own group
-  // name above), but kept for clarity of the owner-scope intent.
-  void groupNameById;
 
   // Most-recently-active first. Leagues with no Games yet sort behind any
   // League that does have games; among themselves they keep insertion order.
@@ -358,31 +355,22 @@ export const listLeaguesHandler = async (
     return a.lastPlayedAt > b.lastPlayedAt ? -1 : 1;
   });
 
-  // Sort Group options by createdAt ascending so the dropdown matches the
-  // order Owners see elsewhere (S4 / S16). When scoped to a single Group the
-  // dropdown collapses to that single option — the form is effectively locked.
-  const groups: ReadonlyArray<LeagueGroupOption> = scopedGroups
-    .slice()
-    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0))
-    .map(
-      (g): LeagueGroupOption => ({
-        id: g.id,
-        name: g.name,
-        defaultRulesetId: g.defaultRulesetId,
-      }),
-    );
+  // The create modal's Group dropdown collapses to the single scoped Group, so
+  // the form is locked to the Group in the path.
+  const groups: ReadonlyArray<LeagueGroupOption> = [
+    {
+      id: group.id,
+      name: group.name,
+      defaultRulesetId: group.defaultRulesetId,
+    },
+  ];
 
-  // Rulesets across every (scoped) owned Group, tagged with `groupId` so the
-  // modal can filter client-side.
-  const rulesets: LeagueRulesetOptionWithGroup[] = [];
-  for (const { group, rulesets: groupRulesets } of perGroup) {
-    for (const ruleset of groupRulesets) {
-      rulesets.push({
-        ...projectRulesetOption(ruleset, group.defaultRulesetId ?? null),
-        groupId: ruleset.groupId,
-      });
-    }
-  }
+  // The scoped Group's Rulesets, tagged with `groupId` so the modal can filter
+  // client-side (it only ever sees this one Group's rulesets now).
+  const rulesets: LeagueRulesetOptionWithGroup[] = groupRulesets.map((ruleset) => ({
+    ...projectRulesetOption(ruleset, group.defaultRulesetId ?? null),
+    groupId: ruleset.groupId,
+  }));
 
   return { leagues, groups, rulesets };
 };
@@ -407,6 +395,10 @@ export const getLeagueDetailHandler = async (
 
   const league = await repos.leagues.findById(input.leagueId);
   if (league === null) return null;
+  // The League must live under the Group in the URL path. A League id pasted
+  // under the wrong Group namespace resolves to `null` (the route redirects to
+  // that Group's list) rather than rendering under a foreign Group.
+  if (league.groupId !== input.groupId) return null;
   const group = await repos.groups.findById(league.groupId);
   if (!group || group.ownerId !== input.ownerId) return null;
 

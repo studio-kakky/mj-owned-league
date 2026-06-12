@@ -61,6 +61,7 @@ describe('LeagueListScreen', () => {
   it('renders the filter pills + create trigger', () => {
     render(
       <LeagueListScreen
+        groupId="g1"
         leagues={baseLeagues}
         groups={baseGroups}
         rulesets={baseRulesets}
@@ -73,9 +74,10 @@ describe('LeagueListScreen', () => {
     expect(screen.getByTestId('leagues-create-trigger')).toBeEnabled();
   });
 
-  it('renders one card per league with the format + group label', () => {
+  it('renders one card per league (group label removed — the list is group-scoped) linking to the group-scoped detail', () => {
     render(
       <LeagueListScreen
+        groupId="g1"
         leagues={baseLeagues}
         groups={baseGroups}
         rulesets={baseRulesets}
@@ -87,13 +89,19 @@ describe('LeagueListScreen', () => {
     expect(items).toHaveLength(1);
     const card = items[0] as HTMLElement;
     expect(within(card).getByText('2026 春シーズン')).toBeInTheDocument();
-    expect(within(card).getByText(/金曜定例会/)).toBeInTheDocument();
     expect(within(card).getByText(/4人 半荘/)).toBeInTheDocument();
+    // The redundant Group label is gone now that the list is scoped to one Group.
+    expect(within(card).queryByText('金曜定例会')).not.toBeInTheDocument();
+    // The card links to the group-scoped detail route (stubbed Link forwards
+    // `params` as an attribute, so we assert on `to`).
+    const link = within(card).getByRole('link');
+    expect(link).toHaveAttribute('href', '/groups/$groupId/leagues/$leagueId');
   });
 
   it('filters out leagues whose status mismatches the active pill', () => {
     render(
       <LeagueListScreen
+        groupId="g1"
         leagues={baseLeagues}
         groups={baseGroups}
         rulesets={baseRulesets}
@@ -108,7 +116,15 @@ describe('LeagueListScreen', () => {
   });
 
   it('shows the "no groups" empty state and disables the trigger when groups are empty', () => {
-    render(<LeagueListScreen leagues={[]} groups={[]} rulesets={[]} onCreateLeague={() => {}} />);
+    render(
+      <LeagueListScreen
+        groupId="g1"
+        leagues={[]}
+        groups={[]}
+        rulesets={[]}
+        onCreateLeague={() => {}}
+      />,
+    );
     expect(screen.getByTestId('leagues-empty-no-groups')).toBeInTheDocument();
     expect(screen.getByTestId('leagues-create-trigger')).toBeDisabled();
   });
@@ -117,6 +133,7 @@ describe('LeagueListScreen', () => {
     const onCreateLeague = vi.fn().mockResolvedValue(undefined);
     render(
       <LeagueListScreen
+        groupId="g1"
         leagues={baseLeagues}
         groups={baseGroups}
         rulesets={baseRulesets}

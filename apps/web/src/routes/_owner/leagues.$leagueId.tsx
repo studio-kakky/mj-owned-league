@@ -1,36 +1,25 @@
 /**
- * `/leagues/$leagueId` — S7 League 詳細 (`04-screens.md` § S7, Issue #18).
+ * `/leagues/$leagueId` — legacy redirect (Issue #60).
  *
- * Wiring strategy mirrors `/leagues` (the sibling list route):
- *   - `getLeagueDetailServerFn` → route loader. Returns the projected
- *     {@link LeagueDetailData} payload or `null` for "not found / not
- *     yours"; we surface `null` as a 404-ish redirect to the list rather
- *     than throwing, because the most common cause is a stale URL the
- *     user pasted from somewhere else.
- *   - The screen is purely presentational; mutations (Match creation,
- *     game input, etc.) are owned by the destination routes (S9 / S11).
+ * The League detail moved to `/groups/:groupId/leagues/:leagueId` so it shares
+ * the Group namespace with its list (S15). The old flat URL carries no
+ * groupId, so we cannot reconstruct the canonical detail path without a lookup;
+ * rather than add a round trip for a stale link, we bounce to the active
+ * Group's League list (or `/groups` when no Group is active) and let the user
+ * re-open the League from there.
  */
 
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { LeagueDetailScreen } from '../../components/leagues';
-import { getLeagueDetailServerFn } from '../../server/leagues';
-
-const LeagueDetailPage = () => {
-  const { data } = Route.useLoaderData();
-  return <LeagueDetailScreen data={data} />;
-};
 
 export const Route = createFileRoute('/_owner/leagues/$leagueId')({
-  loader: async ({ params }) => {
-    const data = await getLeagueDetailServerFn({
-      data: { leagueId: params.leagueId },
-    });
-    if (data === null) {
-      // Stale or cross-owner id. Send the user back to the list rather than
-      // rendering a "not found" page — the list is the natural recovery.
-      throw redirect({ to: '/leagues' });
+  beforeLoad: ({ context }) => {
+    const activeGroup = context.activeGroup;
+    if (activeGroup === null) {
+      throw redirect({ to: '/groups' });
     }
-    return { data };
+    throw redirect({
+      to: '/groups/$groupId/leagues',
+      params: { groupId: activeGroup.id },
+    });
   },
-  component: LeagueDetailPage,
 });

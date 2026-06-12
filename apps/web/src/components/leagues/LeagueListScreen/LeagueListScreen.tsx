@@ -1,18 +1,17 @@
 /**
- * S7 / S15 League 一覧 screen (`04-screens.md` § S7 / S15, Issue #18).
+ * S15 League 一覧 screen (`04-screens.md` § S15, Issue #18 / #60).
  *
- * MVP scope: cross-Group League list with status filter + create modal.
+ * Scope: the active Group's League list with status filter + create modal.
+ * Hosted at `/groups/:groupId/leagues` (Issue #60) — the `groupId` comes from
+ * the URL path, so the list is always scoped to a single Group and the cards
+ * no longer carry a Group label.
  *
  *   - "League 一覧（フィルタ別）" — the issue acceptance criterion. The
  *     filter pills (`すべて` / `進行中` / `終了`) live in the page header.
- *     `04-screens.md` § S15 says the list lives at `/groups/:groupId/leagues`;
- *     for MVP we host it at `/leagues` because (a) the bottom nav already
- *     points there and (b) Owners typically have few Groups, so showing
- *     every League with a Group-label on each card keeps the view useful
- *     without forcing per-Group navigation.
  *
- *   - "新規作成モーダル" — wired to {@link LeagueFormModal}. Disabled when
- *     the Owner has no Groups yet (we point them at S4 instead).
+ *   - "新規作成モーダル" — wired to {@link LeagueFormModal}. The Group is
+ *     fixed to the one in the path (the dropdown collapses to a single
+ *     option), so no Group-picker round trip is needed.
  *
  *   - "終了" filter currently returns 0 because the schema does not yet
  *     carry an `endedAt` column. The pill is still rendered so the
@@ -22,7 +21,8 @@
  * Presentational boundary mirrors `GroupsScreen` and `DashboardScreen`:
  *   - Takes the projected payload + a `onCreateLeague` callback as props.
  *   - No data fetching; the route loader owns the round trip.
- *   - The card click navigates to `/leagues/$leagueId` (S7 detail).
+ *   - The card click navigates to `/groups/$groupId/leagues/$leagueId`
+ *     (S7 detail).
  */
 
 import { Link } from '@tanstack/react-router';
@@ -40,6 +40,11 @@ import { EmptyState } from './EmptyState';
 import { FilterPills } from './FilterPills';
 
 export interface LeagueListScreenProps {
+  /**
+   * The Group this list is scoped to (from the URL path). Used to build the
+   * group-scoped detail links (`/groups/$groupId/leagues/$leagueId`).
+   */
+  groupId: string;
   leagues: ReadonlyArray<LeagueListItem>;
   groups: ReadonlyArray<LeagueGroupOption>;
   rulesets: ReadonlyArray<LeagueRulesetOptionWithGroup>;
@@ -98,6 +103,7 @@ const StatusBadge = ({ status }: { status: LeagueListItem['status'] }) => {
 const MetaDot = () => <span className="text-[#3a3a3a]">·</span>;
 
 export const LeagueListScreen = ({
+  groupId,
   leagues,
   groups,
   rulesets,
@@ -152,8 +158,8 @@ export const LeagueListScreen = ({
           {filtered.map((league) => (
             <li key={league.id} data-testid={`leagues-list-item-${league.id}`}>
               <Link
-                to="/leagues/$leagueId"
-                params={{ leagueId: league.id }}
+                to="/groups/$groupId/leagues/$leagueId"
+                params={{ groupId, leagueId: league.id }}
                 className="flex items-center justify-between gap-3 border-t border-[#1F1F1F] px-5 py-4 transition-colors [&:last-child]:border-b hover:bg-[#141414]"
               >
                 <div className="min-w-0 flex-1">
@@ -164,8 +170,6 @@ export const LeagueListScreen = ({
                     <StatusBadge status={league.status} />
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[11.5px] text-[#666666]">
-                    <span>{league.groupName}</span>
-                    <MetaDot />
                     <span>{FORMAT_LABELS[league.format]}</span>
                     <MetaDot />
                     <span>{league.playerCount}人</span>

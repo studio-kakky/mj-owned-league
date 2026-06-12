@@ -41,59 +41,100 @@ const makeStubLeague = (slug: string) => {
   };
 };
 
+/**
+ * The dev-seed "金曜定例会" Group id for an Owner — the Group the seeded
+ * "2026 春シーズン" League lives under. `listLeaguesHandler` now requires a
+ * `groupId` (it comes from the URL path), so the tests anchor on this
+ * deterministic id rather than enumerating Groups. See
+ * `groups-store.ts#seedDevDataIfEmpty` (`g1Id = dev-${ownerId}-friday`).
+ */
+const seedGroupId = (ownerId: string): string => `dev-${ownerId}-friday`;
+
 describe('listLeaguesHandler', () => {
-  it('materialises the dev seed on first call and returns the seeded League with the Group label', async () => {
-    const data = await listLeaguesHandler({ ownerId: owner });
+  it('materialises the dev seed and returns the seeded League for the scoped Group', async () => {
+    const data = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (data === null) throw new Error('expected the seeded group to resolve');
     expect(data.leagues).toHaveLength(1);
     const [first] = data.leagues;
     if (!first) throw new Error('expected one league in the seed');
     expect(first.name).toBe('2026 春シーズン');
-    expect(first.groupName).toBe('金曜定例会');
     expect(first.matchCount).toBe(1);
     expect(first.gameCount).toBe(1);
     expect(first.publicSlug).toBe(`dev-spring-${owner.slice(0, 6)}`);
   });
 
-  it('isolates Leagues across Owners', async () => {
-    await listLeaguesHandler({ ownerId: owner });
-    const other = await listLeaguesHandler({ ownerId: otherOwner });
-    // The other owner sees its own seed, not the first owner's League.
-    expect(other.leagues.every((l) => l.id.startsWith(`dev-${otherOwner}-`))).toBe(true);
+  it('returns null for a Group owned by a different Owner', async () => {
+    // Seed both owners, then ask as `owner` for `otherOwner`'s group.
+    await listLeaguesHandler({ ownerId: otherOwner, groupId: seedGroupId(otherOwner) });
+    const data = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(otherOwner) });
+    expect(data).toBeNull();
   });
 
-  it('returns the Owner-scoped Group and Ruleset option lists for the create modal', async () => {
-    const data = await listLeaguesHandler({ ownerId: owner });
-    expect(data.groups.length).toBeGreaterThan(0);
-    expect(data.groups.every((g) => g.name.length > 0)).toBe(true);
+  it('returns null for an unknown Group id', async () => {
+    const data = await listLeaguesHandler({ ownerId: owner, groupId: 'no-such-group' });
+    expect(data).toBeNull();
+  });
+
+  it('returns the single scoped Group and its Ruleset options for the create modal', async () => {
+    const data = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (data === null) throw new Error('expected the seeded group to resolve');
+    // The dropdown is locked to the Group in the path: exactly one option.
+    expect(data.groups).toHaveLength(1);
+    expect(data.groups[0]?.id).toBe(seedGroupId(owner));
     expect(data.rulesets.length).toBeGreaterThan(0);
-    // Every ruleset is tagged with one of the Owner's Groups.
-    const ownedGroupIds = new Set(data.groups.map((g) => g.id));
-    expect(data.rulesets.every((r) => ownedGroupIds.has(r.groupId))).toBe(true);
+    // Every ruleset belongs to the scoped Group.
+    expect(data.rulesets.every((r) => r.groupId === seedGroupId(owner))).toBe(true);
   });
 });
 
 describe('getLeagueDetailHandler', () => {
   it('returns null for a non-existent League', async () => {
-    const detail = await getLeagueDetailHandler({ ownerId: owner, leagueId: 'no-such-id' });
+    const detail = await getLeagueDetailHandler({
+      ownerId: owner,
+      groupId: seedGroupId(owner),
+      leagueId: 'no-such-id',
+    });
     expect(detail).toBeNull();
   });
 
   it('returns null when the League belongs to a different Owner', async () => {
-    const { leagues } = await listLeaguesHandler({ ownerId: owner });
-    const target = leagues[0];
+    const list = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
+    const target = list.leagues[0];
     if (!target) throw new Error('expected a seeded league');
     const detail = await getLeagueDetailHandler({
       ownerId: otherOwner,
+      groupId: seedGroupId(owner),
+      leagueId: target.id,
+    });
+    expect(detail).toBeNull();
+  });
+
+  it('returns null when the League does not belong to the groupId in the path', async () => {
+    const list = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
+    const target = list.leagues[0];
+    if (!target) throw new Error('expected a seeded league');
+    // The League is real and owned, but the path points at the *other* seeded
+    // Group ("会社サークル", dev-${owner}-company) — must resolve to null.
+    const detail = await getLeagueDetailHandler({
+      ownerId: owner,
+      groupId: `dev-${owner}-company`,
       leagueId: target.id,
     });
     expect(detail).toBeNull();
   });
 
   it('surfaces the seeded League with its Match and most-recent Game', async () => {
-    const { leagues } = await listLeaguesHandler({ ownerId: owner });
-    const target = leagues[0];
+    const list = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
+    const target = list.leagues[0];
     if (!target) throw new Error('expected a seeded league');
-    const detail = await getLeagueDetailHandler({ ownerId: owner, leagueId: target.id });
+    const detail = await getLeagueDetailHandler({
+      ownerId: owner,
+      groupId: seedGroupId(owner),
+      leagueId: target.id,
+    });
     expect(detail).not.toBeNull();
     expect(detail?.name).toBe('2026 春シーズン');
     expect(detail?.matches).toHaveLength(1);
@@ -111,7 +152,8 @@ describe('getLeagueDetailHandler', () => {
 describe('createLeagueHandler', () => {
   it('creates a new League under a Group owned by the caller and assigns a publicSlug', async () => {
     // Materialise the seed so the Owner has at least one Group to anchor on.
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (seeded === null) throw new Error('expected the seeded group to resolve');
     const targetGroup = seeded.groups[0];
     if (!targetGroup) throw new Error('expected a seeded group');
 
@@ -132,14 +174,19 @@ describe('createLeagueHandler', () => {
     expect(created.publicSlug).not.toBe(seededSlug);
 
     // The list reflects the new League.
-    const after = await listLeaguesHandler({ ownerId: owner });
+    const after = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (after === null) throw new Error('expected the seeded group to resolve');
     expect(after.leagues.map((l) => l.name)).toContain('2026 秋シーズン');
   });
 
   it('rejects creation when the Group belongs to a different Owner', async () => {
     // Seed the OTHER owner's groups, then try to create as `owner` against
     // one of those Group ids.
-    const other = await listLeaguesHandler({ ownerId: otherOwner });
+    const other = await listLeaguesHandler({
+      ownerId: otherOwner,
+      groupId: seedGroupId(otherOwner),
+    });
+    if (other === null) throw new Error('expected the other owner group to resolve');
     const foreign = other.groups[0];
     if (!foreign) throw new Error('expected the other owner to have a group');
 
@@ -155,15 +202,21 @@ describe('createLeagueHandler', () => {
   });
 
   it('rejects an explicit defaultRulesetId that belongs to a different Group', async () => {
-    const seeded = await listLeaguesHandler({ ownerId: owner });
+    const seeded = await listLeaguesHandler({ ownerId: owner, groupId: seedGroupId(owner) });
+    if (seeded === null) throw new Error('expected the seeded group to resolve');
     const ownGroup = seeded.groups[0];
     if (!ownGroup) throw new Error('expected a seeded group');
 
-    // Find any Ruleset NOT belonging to the chosen group. The dev seed has
-    // exactly one ruleset per group, so any ruleset whose groupId !== ownGroup.id
-    // works.
-    const foreignRuleset = seeded.rulesets.find((r) => r.groupId !== ownGroup.id);
-    if (!foreignRuleset) throw new Error('expected a foreign ruleset in the seed');
+    // Pull a Ruleset from the Owner's *other* seeded Group ("会社サークル").
+    // The list handler is now Group-scoped, so we query that Group explicitly
+    // to obtain a Ruleset that does not belong to `ownGroup`.
+    const otherGroup = await listLeaguesHandler({
+      ownerId: owner,
+      groupId: `dev-${owner}-company`,
+    });
+    if (otherGroup === null) throw new Error('expected the company group to resolve');
+    const foreignRuleset = otherGroup.rulesets.find((r) => r.groupId !== ownGroup.id);
+    if (!foreignRuleset) throw new Error('expected a foreign ruleset in the other group');
 
     await expect(
       createLeagueHandler({
