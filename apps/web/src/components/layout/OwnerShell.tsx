@@ -79,6 +79,7 @@ export const OwnerShell = ({
           homeTo={activeGroup ? `/groups/${activeGroup.id}` : '/groups'}
           leaguesTo={activeGroup ? `/groups/${activeGroup.id}/leagues` : '/groups'}
           matchesTo={activeGroup ? `/groups/${activeGroup.id}/matches` : '/groups'}
+          settingsTo={activeGroup ? `/groups/${activeGroup.id}/settings` : '/groups'}
         />
       ) : null}
 

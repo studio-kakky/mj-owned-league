@@ -7,14 +7,15 @@
  *   - ホーム   (the active Group's S6 dashboard, `/groups/$activeGroupId`)
  *   - リーグ   (the active Group's S15 list, `/groups/$activeGroupId/leagues`)
  *   - マッチ   (the active Group's S9 list, `/groups/$activeGroupId/matches`)
- *   - 設定     (`/settings`)
+ *   - 設定     (the active Group's S16 settings, `/groups/$activeGroupId/settings`)
  *
- * ホーム / リーグ / マッチ are group-scoped (Issue #58 / #60 / #61): the nav
- * only renders once a Group has been entered, so "home" is that Group's
- * ダッシュボード, "リーグ" is that Group's League list, and "マッチ" is that
- * Group's Match list — not top-level routes. The caller passes the resolved
- * targets via {@link OwnerBottomNavProps.homeTo} /
- * {@link OwnerBottomNavProps.leaguesTo} / {@link OwnerBottomNavProps.matchesTo}.
+ * Every tab is group-scoped (Issue #58 / #60 / #61 / #62): the nav only
+ * renders once a Group has been entered, so "home" is that Group's
+ * ダッシュボード, "リーグ" is that Group's League list, "マッチ" is that
+ * Group's Match list, and "設定" is that Group's Settings — not top-level
+ * routes. The caller passes the resolved targets via
+ * {@link OwnerBottomNavProps.homeTo} / {@link OwnerBottomNavProps.leaguesTo} /
+ * {@link OwnerBottomNavProps.matchesTo} / {@link OwnerBottomNavProps.settingsTo}.
  *
  * The `to` props are typed as `string` (not the generated route literal
  * union) so the nav can link to routes that may not yet be mounted; until a
@@ -55,14 +56,25 @@ export interface OwnerBottomNavProps {
    * {@link OwnerBottomNavProps.homeTo}.
    */
   matchesTo: string;
+  /**
+   * Destination for the 設定 tab — the active Group's S16 Settings
+   * (`/groups/$activeGroupId/settings`). Same fallback rationale as
+   * {@link OwnerBottomNavProps.homeTo}.
+   */
+  settingsTo: string;
 }
 
-export const OwnerBottomNav = ({ homeTo, leaguesTo, matchesTo }: OwnerBottomNavProps) => {
+export const OwnerBottomNav = ({
+  homeTo,
+  leaguesTo,
+  matchesTo,
+  settingsTo,
+}: OwnerBottomNavProps) => {
   const navItems: ReadonlyArray<OwnerBottomNavItem> = [
     { label: 'ホーム', to: homeTo, exact: true, Icon: HomeIcon },
     { label: 'リーグ', to: leaguesTo, Icon: TrophyIcon },
     { label: 'マッチ', to: matchesTo, Icon: RectangleStackIcon },
-    { label: '設定', to: '/settings', Icon: Cog6ToothIcon },
+    { label: '設定', to: settingsTo, Icon: Cog6ToothIcon },
   ];
 
   return (

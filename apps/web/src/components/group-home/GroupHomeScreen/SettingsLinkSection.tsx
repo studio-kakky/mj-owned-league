@@ -11,8 +11,8 @@ export const SettingsLinkSection = ({ groupId }: { groupId: string }) => {
       </div>
       <div data-testid="group-home-settings-links">
         <Link
-          to="/settings"
-          search={{ groupId }}
+          to="/groups/$groupId/settings"
+          params={{ groupId }}
           data-testid="group-home-settings-players-link"
           className="flex items-center justify-between gap-3 border-t border-[#1F1F1F] px-5 py-3.5 transition-colors hover:bg-[#141414]"
         >
@@ -25,8 +25,8 @@ export const SettingsLinkSection = ({ groupId }: { groupId: string }) => {
           <ChevronRight className="shrink-0 text-[#888888]" />
         </Link>
         <Link
-          to="/settings"
-          search={{ groupId }}
+          to="/groups/$groupId/settings"
+          params={{ groupId }}
           data-testid="group-home-settings-rulesets-link"
           className="flex items-center justify-between gap-3 border-t border-b border-[#1F1F1F] px-5 py-3.5 transition-colors hover:bg-[#141414]"
         >

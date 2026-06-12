@@ -3,9 +3,9 @@
  *
  * Two independent collections live on this screen — Ruleset テンプレート and
  * Player — so each gets its own list-item projection. They share the
- * `groupId` scope: the route loader picks an active Group (today the
- * Owner's first Group; eventually the GroupSwitcher-selected one) and the
- * server function returns Rulesets / Players bound to that Group only.
+ * `groupId` scope: the Group comes from the URL path
+ * (`/groups/:groupId/settings`, Issue #62) and the server function returns
+ * Rulesets / Players bound to that Group only.
  *
  * Shapes are deliberately presentational. The screen never imports Drizzle
  * row types; the server function projects rows into these shapes.
@@ -53,13 +53,14 @@ export interface SettingsPlayerItem {
 /**
  * Top-level payload the Settings loader hands to {@link SettingsScreen}.
  *
- * `group` is included so the screen can show "<Group> の設定" in the page
- * header (and so the empty-state for no-group can render a helpful message).
- * `null` means the Owner has no Groups yet — the screen surfaces a CTA to
- * `/groups` instead of an empty list.
+ * `group` is always present (Issue #62): the route loads Settings for the
+ * Group named in the URL path and the server returns `null` (→ route
+ * redirect to `/groups`) for a missing / foreign Group, so the screen never
+ * has to render a "no active group" empty state. The summary still flows
+ * through so the header can show the Group name.
  */
 export interface SettingsData {
-  group: SettingsGroupSummary | null;
+  group: SettingsGroupSummary;
   rulesets: ReadonlyArray<SettingsRulesetItem>;
   players: ReadonlyArray<SettingsPlayerItem>;
 }

@@ -208,7 +208,7 @@ sidebar_position: 4
 | パス | `/groups/:groupId/settings` |
 | 表示要素 | 設定トップ → Ruleset テンプレート管理 / Player 管理 のサブセクション |
 | 主な操作 | Ruleset の追加・編集・削除・デフォルト切替 / Player の追加・編集・非アクティブ化・削除 |
-| 備考 | S6 のタブから独立した画面に切り出した。履歴ありの Player は「削除不可 → 非アクティブ化提案」を表示する。 |
+| 備考 | S6 のタブから独立した画面に切り出した。履歴ありの Player は「削除不可 → 非アクティブ化提案」を表示する。`groupId` は URL パスを唯一の入力源とし、`?groupId=` クエリやアクティブグループへの暗黙フォールバック（旧「first group」既定）は持たない。他人 / 不明な `groupId` はサーバー側の所有権検証で弾き `/groups` へリダイレクトする。グループ未選択時もルートレベルで `/groups` へ誘導するため、画面内に「グループ未選択」状態は持たない。旧 `/settings` はアクティブグループの設定へリダイレクトする後方互換スタブ（Issue #62）。ボトムナビの「設定」はアクティブグループの本画面（`/groups/:activeGroupId/settings`）を指す。 |
 
 ---
 
@@ -297,8 +297,8 @@ sidebar_position: 4
 |---|---|---|
 | `/` | Owner ダッシュボード | 要 |
 | `/login` | ログイン | 不要 |
-| `/groups`, `/groups/:groupId`, `/groups/:groupId/leagues`, `/groups/:groupId/leagues/:leagueId`, `/groups/:groupId/matches`, `/groups/:groupId/matches/new`, `/groups/:groupId/matches/:matchId`, `/groups/:groupId/settings`, `/invitations` | Owner 用各機能（リーグ・マッチとも Group 配下に統一、Issue #60 / #61） | 要 |
-| `/leagues`, `/leagues/:leagueId`, `/matches`, `/matches/new`, `/matches/:matchId` | 後方互換リダイレクト（アクティブグループの `/groups/:groupId/...` へ。アクティブグループ未選択時は `/groups` へ） | 要 |
+| `/groups`, `/groups/:groupId`, `/groups/:groupId/leagues`, `/groups/:groupId/leagues/:leagueId`, `/groups/:groupId/matches`, `/groups/:groupId/matches/new`, `/groups/:groupId/matches/:matchId`, `/groups/:groupId/settings`, `/invitations` | Owner 用各機能（リーグ・マッチ・設定とも Group 配下に統一、Issue #60 / #61 / #62） | 要 |
+| `/leagues`, `/leagues/:leagueId`, `/matches`, `/matches/new`, `/matches/:matchId`, `/settings` | 後方互換リダイレクト（アクティブグループの `/groups/:groupId/...` へ。アクティブグループ未選択時は `/groups` へ） | 要 |
 | `/invitations/accept/:token` | 招待受け入れ | 不要（トークン検証） |
 | `/l/:publicSlug` | League 公開ビュー | 不要 |
 | `/m/:publicSlug` | Match 公開ビュー（League 外） | 不要 |

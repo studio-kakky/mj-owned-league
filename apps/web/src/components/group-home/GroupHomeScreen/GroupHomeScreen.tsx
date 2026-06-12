@@ -22,7 +22,7 @@
  * Why we don't reuse `DashboardSection` from `components/dashboard`:
  *   The dashboard's `DashboardSection` constrains `moreTo` to a small union
  *   (`/groups` | `/leagues` | `/matches`). The S6 home needs richer link
- *   targets (different `search` params per section, `/settings?groupId=…`),
+ *   targets (different `search` params per section, `/groups/$groupId/settings`),
  *   so we redeclare the section primitive locally. Promoting these to a
  *   shared module is a refactor we'll do after a third screen wants the
  *   same shape.
