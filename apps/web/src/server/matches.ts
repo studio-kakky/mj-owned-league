@@ -122,18 +122,19 @@ const makeRepos = (db?: Database): ServerRepos => {
 
 const getContextInput = z.object({
   /**
+   * The Group the form is scoped to. Required since Issue #61: the create page
+   * lives at `/groups/:groupId/matches/new`, so `groupId` always comes from the
+   * URL path. A foreign / unknown id resolves to `null` (the route redirects to
+   * `/groups`).
+   */
+  groupId: z.string().min(1),
+  /**
    * Optional `?leagueId=` — when supplied the loader pins the screen to that
-   * League. Validation only enforces the string shape; ownership / existence
-   * are checked in the handler so a stale URL falls through to the
-   * unbound-form variant rather than a hard 4xx.
+   * League. The handler verifies the League belongs to `groupId`; a stale /
+   * foreign id falls through to the unbound (League 外) form rather than a hard
+   * 4xx.
    */
   leagueId: z.string().min(1).optional(),
-  /**
-   * Optional `?groupId=` — used when the caller arrived from a non-League
-   * context (e.g. a Group home page) and wants the form pre-pinned to a
-   * particular Group.
-   */
-  groupId: z.string().min(1).optional(),
 });
 
 const createMatchInput = z.object({
@@ -184,110 +185,77 @@ export const computeNextSequenceNumber = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Resolves the loader payload powering the S10 form. Returns the Groups /
- * Leagues / Rulesets the Owner may pick from, plus initial selections derived
- * from the `?leagueId=` / `?groupId=` query.
+ * Resolves the loader payload powering the S10 form, scoped to the single
+ * Group in the URL path (`/groups/:groupId/matches/new`, Issue #61). Returns
+ * the Group's Leagues / Rulesets / active-Player count, plus the initial
+ * selections derived from the `?leagueId=` query.
  *
- * Cross-Owner safety:
- *   - We always start from "Groups owned by the caller". Leagues / Rulesets
- *     surfaced are filtered to those Group ids. A `?leagueId=` pointing at a
- *     foreign League is silently dropped (the loader returns `initialLeagueId
- *     = null`) — the screen then renders the cross-Group form, which is the
- *     safer recovery.
+ * Returns `null` when the Group does not exist or is owned by a different
+ * Owner; the route surfaces that as a redirect to `/groups`. Ownership is the
+ * server's responsibility — we never trust the path `groupId` on the wire.
  *
- *   - `?groupId=` is similarly dropped when foreign; we fall back to the
- *     Owner's first Group as the initial selection.
+ * A `?leagueId=` pointing at a League outside this Group (foreign / stale) is
+ * silently dropped (the loader returns `initialLeagueId = null`) — the form
+ * then renders the League 外 variant, which is the safer recovery.
  */
 export const getMatchCreateContextHandler = async (
   input: GetMatchCreateContextInput,
   db?: Database,
-): Promise<MatchCreateContext> => {
+): Promise<MatchCreateContext | null> => {
   if (!db) seedDevDataIfEmpty(input.ownerId);
   const repos = makeRepos(db);
 
-  const ownedGroups = [...(await repos.groups.listByOwner(input.ownerId))].sort((a, b) =>
-    a.createdAt > b.createdAt ? 1 : a.createdAt < b.createdAt ? -1 : 0,
-  );
+  // Ownership guard: the Group must exist and belong to the caller.
+  const group = await repos.groups.findById(input.groupId);
+  if (group === null || group.ownerId !== input.ownerId) return null;
 
-  // Gather Leagues / Rulesets / Players per owned Group through the
-  // repositories — works identically against the in-memory store and D1.
-  const perGroup = await Promise.all(
-    ownedGroups.map(async (group) => {
-      const [groupLeagues, groupRulesets, groupPlayers] = await Promise.all([
-        repos.leagues.listByGroup(group.id),
-        repos.rulesets.listByGroup(group.id),
-        repos.players.listByGroup(group.id),
-      ]);
-      return { group, groupLeagues, groupRulesets, groupPlayers };
-    }),
-  );
+  const [groupLeagues, groupRulesets, groupPlayers] = await Promise.all([
+    repos.leagues.listByGroup(group.id),
+    repos.rulesets.listByGroup(group.id),
+    repos.players.listByGroup(group.id),
+  ]);
 
-  const groups: ReadonlyArray<MatchCreateGroupOption> = ownedGroups.map((g) => ({
-    id: g.id,
-    name: g.name,
-    defaultRulesetId: g.defaultRulesetId,
+  // The Group selector collapses to the single scoped Group, so the form is
+  // locked to the Group in the path.
+  const groups: ReadonlyArray<MatchCreateGroupOption> = [
+    { id: group.id, name: group.name, defaultRulesetId: group.defaultRulesetId },
+  ];
+
+  // Leagues in the scoped Group, tagged with `format` so the screen can lock
+  // the format selector on League pick.
+  const leagues: MatchCreateLeagueOption[] = groupLeagues.map((league) => ({
+    id: league.id,
+    groupId: league.groupId,
+    name: league.name,
+    format: league.format,
+    defaultRulesetId: league.defaultRulesetId,
   }));
 
-  // Leagues across every owned Group, tagged with `groupId` + `format` so the
-  // screen can filter client-side and lock the format selector on League pick.
-  const leagues: MatchCreateLeagueOption[] = [];
-  for (const { groupLeagues } of perGroup) {
-    for (const league of groupLeagues) {
-      leagues.push({
-        id: league.id,
-        groupId: league.groupId,
-        name: league.name,
-        format: league.format,
-        defaultRulesetId: league.defaultRulesetId,
-      });
-    }
-  }
+  // Rulesets in the scoped Group.
+  const rulesets: MatchCreateRulesetOption[] = groupRulesets.map((ruleset) => ({
+    id: ruleset.id,
+    groupId: ruleset.groupId,
+    name: ruleset.name,
+    startingScore: ruleset.startingScore,
+    returnScore: ruleset.returnScore,
+    umaPattern: ruleset.umaPattern,
+    isGroupDefault: group.defaultRulesetId === ruleset.id,
+  }));
 
-  // Rulesets across every owned Group.
-  const rulesets: MatchCreateRulesetOption[] = [];
-  for (const { group, groupRulesets } of perGroup) {
-    for (const ruleset of groupRulesets) {
-      rulesets.push({
-        id: ruleset.id,
-        groupId: ruleset.groupId,
-        name: ruleset.name,
-        startingScore: ruleset.startingScore,
-        returnScore: ruleset.returnScore,
-        umaPattern: ruleset.umaPattern,
-        isGroupDefault: group.defaultRulesetId === ruleset.id,
-      });
-    }
-  }
+  // Active-Player count for the scoped Group, used to gate 3-player creation.
+  const activePlayerCountByGroup: Record<string, number> = {
+    [group.id]: groupPlayers.filter((p) => p.isActive).length,
+  };
 
-  // Active-Player counts per Group. We pre-aggregate here so the screen can
-  // gate 3-player Match creation without a second round trip.
-  const activePlayerCountByGroup: Record<string, number> = {};
-  for (const { group, groupPlayers } of perGroup) {
-    activePlayerCountByGroup[group.id] = groupPlayers.filter((p) => p.isActive).length;
-  }
-
-  // Resolve the initial Group / League. A foreign / stale `?leagueId=` is
-  // dropped here so the screen renders the unbound form instead of erroring.
+  // Resolve the initial League. A `?leagueId=` outside this Group is dropped
+  // here so the screen renders the League 外 form instead of erroring.
   let initialLeagueId: string | null = null;
-  let initialGroupId: string | null = null;
   let initialSequenceNumber: number | null = null;
-
-  const ownedGroupIds = new Set(ownedGroups.map((g) => g.id));
-
   if (input.leagueId !== undefined) {
     const candidate = leagues.find((l) => l.id === input.leagueId);
     if (candidate !== undefined) {
       initialLeagueId = candidate.id;
-      initialGroupId = candidate.groupId;
       initialSequenceNumber = await computeNextSequenceNumber(repos.matches, candidate.id);
-    }
-  }
-
-  if (initialGroupId === null) {
-    if (input.groupId !== undefined && ownedGroupIds.has(input.groupId)) {
-      initialGroupId = input.groupId;
-    } else {
-      initialGroupId = ownedGroups[0]?.id ?? null;
     }
   }
 
@@ -297,7 +265,7 @@ export const getMatchCreateContextHandler = async (
     rulesets,
     activePlayerCountByGroup,
     initialLeagueId,
-    initialGroupId,
+    initialGroupId: group.id,
     initialSequenceNumber,
   };
 };

@@ -1,54 +1,27 @@
 /**
- * `/matches` — S9 Match 一覧 (`04-screens.md` § S9, Issue #19).
+ * `/matches` — legacy redirect (Issue #61).
  *
- * Two modes:
- *   - `/matches`            cross-Group list of every Match the Owner has.
- *   - `/matches?leagueId=…` filtered to one League (used from S7 League 詳細).
+ * The cross-Group Match list used to live here. Issue #61 moved the list under
+ * the Group namespace (`/groups/:groupId/matches`, S9) so it shares a namespace
+ * with the Group's S6 ホーム and the per-Group League / Settings screens. This
+ * stub keeps old links / bookmarks alive by bouncing them to the active Group's
+ * list — or to `/groups` (the selection screen) when no Group is active.
  *
- * Wiring strategy mirrors `/leagues` (Issue #18):
- *   - This route is the only file that crosses the TanStack Start RPC
- *     boundary. {@link MatchListScreen} takes the projected payload as a
- *     prop and never imports the server functions.
- *   - `listMatchesServerFn` → loader. We thread `?leagueId=` through
- *     `loaderDeps` so the loader re-fetches when the query changes.
- *
- * The doc places the League-scoped list at `/leagues/:leagueId/matches`. For
- * MVP we host the cross-Group list at `/matches` (the bottom-nav target)
- * and consume `?leagueId=…` for scoping — same pattern S10 Match 作成 uses.
+ * The active Group comes from the `_owner` layout's route context (resolved in
+ * its `beforeLoad`), so the redirect needs no round trip of its own.
  */
 
-import { createFileRoute } from '@tanstack/react-router';
-import { z } from 'zod';
-import { MatchListScreen } from '../../components/matches';
-import { listMatchesServerFn } from '../../server/match-detail';
-
-const searchSchema = z.object({
-  leagueId: z.string().min(1).optional(),
-  // Optional Group filter — used by S6 Group 詳細 to deep-link into "matches
-  // scoped to a specific Group". `leagueId` takes precedence when both are
-  // supplied (the server then validates the League belongs to the same
-  // owner — foreign / stale ids fall through to the broader list).
-  groupId: z.string().min(1).optional(),
-});
-
-const MatchesPage = () => {
-  const { data } = Route.useLoaderData();
-  return (
-    <MatchListScreen matches={data.matches} scope={data.scope} leagueOptions={data.leagueOptions} />
-  );
-};
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_owner/matches')({
-  validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ leagueId: search.leagueId, groupId: search.groupId }),
-  loader: async ({ deps }) => {
-    const data = await listMatchesServerFn({
-      data: {
-        leagueId: deps.leagueId,
-        groupId: deps.groupId,
-      },
+  beforeLoad: ({ context }) => {
+    const activeGroup = context.activeGroup;
+    if (activeGroup === null) {
+      throw redirect({ to: '/groups' });
+    }
+    throw redirect({
+      to: '/groups/$groupId/matches',
+      params: { groupId: activeGroup.id },
     });
-    return { data };
   },
-  component: MatchesPage,
 });

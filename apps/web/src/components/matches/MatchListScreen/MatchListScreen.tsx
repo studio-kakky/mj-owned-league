@@ -1,20 +1,19 @@
 /**
- * S9 Match 一覧 — League-スコープ / Owner 全 (`04-screens.md` § S9, Issue #19)
- * + Issue #22 で「マッチ一覧（グループ横断）」のリーグセレクタを追加。
+ * S9 Match 一覧 — グループ配下 (`04-screens.md` § S9, Issue #61).
  *
- * URL: `/matches?leagueId=…` で League-スコープ、無印で Owner の全 Match 横断。
- * spec の `/leagues/$leagueId/matches` は MVP では query-param 形式で代替
- * （`MatchCreateScreen` と同じ運用、bottom-nav の「マッチ」タブを起点に揃える）。
+ * URL: `/groups/:groupId/matches` で当該グループの全 Match、
+ * `?leagueId=…` で同一グループ内のリーグに絞り込み。`groupId` は常に URL
+ * パス起点なので、横断 (cross-Group) UI / groupName ラベルは廃止した（Issue
+ * #61）。
  *
- * The screen replaces the previous placeholder at `/matches`. Each card links
- * to `/matches/$matchId` (S9 detail). 「Match を追加」リンクは
- * `/matches/new` を `?leagueId=` 付きで開き、S10 のフォームを再利用する。
+ * 各カードは `/groups/$groupId/matches/$matchId`（S9 detail）へリンクする。
+ * 「マッチを追加」リンクは `/groups/$groupId/matches/new` を `?leagueId=` 付き
+ * で開き、S10 のフォームを再利用する。
  *
- * リーグセレクタ (`#22`): cross-Group / League-scoped どちらの状態でも
- * 「すべて + 各リーグ」のチップを横スクロールで表示し、`?leagueId=` を切替
- * できる。同名リーグが別 Group にある場合は groupName を補助ラベルとして
- * 添える。Owner にまだ League が無い場合はセレクタを隠す（チップ「すべて」
- * 1 枚だけの UI は意味が無いため）。
+ * リーグセレクタ: 当該グループ内のリーグのみを「すべて + 各リーグ」のチップ
+ * として横スクロールで表示し、`?leagueId=` を切替できる。同一グループ内に
+ * 限定したため同名リーグの Group 区別ラベルは不要。グループにまだ League が
+ * 無い場合はセレクタを隠す（チップ「すべて」1 枚だけの UI は意味が無い）。
  */
 
 import { Link } from '@tanstack/react-router';
@@ -22,21 +21,19 @@ import type { MatchListItem, MatchListLeagueOption, MatchListScope } from '../de
 import { LeagueChip } from './LeagueChip';
 
 export interface MatchListScreenProps {
+  /** The Group the list is scoped to — threaded into every group-scoped link. */
+  groupId: string;
   matches: ReadonlyArray<MatchListItem>;
   scope: MatchListScope;
   leagueOptions: ReadonlyArray<MatchListLeagueOption>;
 }
 
-export const MatchListScreen = ({ matches, scope, leagueOptions }: MatchListScreenProps) => {
-  // Same-name disambiguation: when two leagues across different Groups share
-  // a `name`, surface the Group as a sub-label so chips stay distinguishable.
-  const nameDuplicates = new Set<string>();
-  const seen = new Set<string>();
-  for (const opt of leagueOptions) {
-    if (seen.has(opt.name)) nameDuplicates.add(opt.name);
-    seen.add(opt.name);
-  }
-
+export const MatchListScreen = ({
+  groupId,
+  matches,
+  scope,
+  leagueOptions,
+}: MatchListScreenProps) => {
   return (
     <section className="space-y-5" data-testid="matches-screen">
       <header className="flex items-start justify-between gap-3">
@@ -45,28 +42,23 @@ export const MatchListScreen = ({ matches, scope, leagueOptions }: MatchListScre
           <h1 className="text-2xl font-bold text-zinc-50">
             {scope.leagueId !== null && scope.leagueName !== null ? scope.leagueName : 'マッチ'}
           </h1>
-          {scope.groupName !== null ? (
+          {scope.leagueId !== null ? (
             <p className="mt-1 truncate text-sm text-zinc-400">
-              {scope.groupName}
-              {scope.leagueId !== null ? (
-                <>
-                  {' / '}
-                  <Link
-                    to="/leagues/$leagueId"
-                    params={{ leagueId: scope.leagueId }}
-                    className="text-emerald-300 hover:underline"
-                  >
-                    リーグ詳細
-                  </Link>
-                </>
-              ) : null}
+              <Link
+                to="/groups/$groupId/leagues/$leagueId"
+                params={{ groupId, leagueId: scope.leagueId }}
+                className="text-emerald-300 hover:underline"
+              >
+                リーグ詳細
+              </Link>
             </p>
           ) : (
-            <p className="mt-1 text-sm text-zinc-400">あなたが管理するすべてのマッチ。</p>
+            <p className="mt-1 text-sm text-zinc-400">このグループのすべてのマッチ。</p>
           )}
         </div>
         <Link
-          to="/matches/new"
+          to="/groups/$groupId/matches/new"
+          params={{ groupId }}
           search={scope.createSearch}
           data-testid="matches-create-trigger"
           className="rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
@@ -84,19 +76,18 @@ export const MatchListScreen = ({ matches, scope, leagueOptions }: MatchListScre
           <ul className="flex items-center gap-2 px-1 pb-1">
             <li>
               <LeagueChip
+                groupId={groupId}
                 label="すべて"
                 active={scope.leagueId === null}
-                href="/matches"
                 testId="matches-league-chip-all"
               />
             </li>
             {leagueOptions.map((option) => (
               <li key={option.id}>
                 <LeagueChip
+                  groupId={groupId}
                   label={option.name}
-                  sublabel={nameDuplicates.has(option.name) ? option.groupName : null}
                   active={scope.leagueId === option.id}
-                  href="/matches"
                   searchLeagueId={option.id}
                   testId={`matches-league-chip-${option.id}`}
                 />
@@ -120,8 +111,8 @@ export const MatchListScreen = ({ matches, scope, leagueOptions }: MatchListScre
           {matches.map((match) => (
             <li key={match.id} data-testid={`matches-list-item-${match.id}`}>
               <Link
-                to="/matches/$matchId"
-                params={{ matchId: match.id }}
+                to="/groups/$groupId/matches/$matchId"
+                params={{ groupId, matchId: match.id }}
                 className="block rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 transition-colors hover:border-emerald-500/70"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -133,8 +124,8 @@ export const MatchListScreen = ({ matches, scope, leagueOptions }: MatchListScre
                     <p className="mt-1 truncate text-xs text-zinc-500">
                       {scope.leagueId === null
                         ? match.leagueName === null
-                          ? `${match.groupName} / League 外`
-                          : `${match.groupName} / ${match.leagueName}`
+                          ? 'League 外'
+                          : match.leagueName
                         : `対局 ${match.gameCount} 件`}
                     </p>
                   </div>

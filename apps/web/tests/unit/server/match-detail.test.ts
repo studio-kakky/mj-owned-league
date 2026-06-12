@@ -25,6 +25,24 @@ import { getMatchCreateContextHandler } from '../../../src/server/matches';
 const owner = 'owner-test-1';
 const otherOwner = 'owner-test-2';
 
+/**
+ * Deterministic dev-seed Friday Group id for an Owner (see
+ * `groups-store.ts#seedDevDataIfEmpty`). The Match handlers now require a
+ * `groupId` from the URL path (Issue #61); the seeded Match / League / Players
+ * all live under this Group.
+ */
+const fridayGroupId = (ownerId: string): string => `dev-${ownerId}-friday`;
+
+/**
+ * Materialises the dev seed for an Owner via the Friday-scoped context call and
+ * returns that context (Leagues / Rulesets for the scoped Group).
+ */
+const seedFor = async (ownerId: string) => {
+  const ctx = await getMatchCreateContextHandler({ ownerId, groupId: fridayGroupId(ownerId) });
+  if (ctx === null) throw new Error('expected the seeded Friday group to resolve');
+  return ctx;
+};
+
 beforeEach(() => {
   resetGroupServerStoreForTests();
 });
@@ -32,12 +50,16 @@ beforeEach(() => {
 describe('getMatchDetailHandler', () => {
   it('returns the projected payload with ranking computed from GameResult', async () => {
     // Materialise the seed.
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
 
-    const detail = await getMatchDetailHandler({ ownerId: owner, matchId: match.id });
+    const detail = await getMatchDetailHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      matchId: match.id,
+    });
     expect(detail).not.toBeNull();
     expect(detail?.format).toBe('4P_HANCHAN');
     expect(detail?.ranking).toHaveLength(4);
@@ -51,70 +73,99 @@ describe('getMatchDetailHandler', () => {
   });
 
   it('returns null for cross-owner matchId', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
 
-    const detail = await getMatchDetailHandler({ ownerId: otherOwner, matchId: match.id });
+    const detail = await getMatchDetailHandler({
+      ownerId: otherOwner,
+      groupId: fridayGroupId(otherOwner),
+      matchId: match.id,
+    });
     expect(detail).toBeNull();
   });
 });
 
 describe('listMatchesHandler', () => {
-  it('lists every Match across the Owner s Groups when no leagueId is supplied', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
-    const list = await listMatchesHandler({ ownerId: owner });
+  it('lists every Match in the scoped Group when no leagueId is supplied', async () => {
+    await seedFor(owner);
+    const list = await listMatchesHandler({ ownerId: owner, groupId: fridayGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
+    expect(list.groupId).toBe(fridayGroupId(owner));
     expect(list.matches.length).toBeGreaterThan(0);
     expect(list.scope.leagueId).toBeNull();
     expect(list.scope.leagueName).toBeNull();
   });
 
+  it('returns null for a Group owned by a different Owner', async () => {
+    await seedFor(otherOwner);
+    const list = await listMatchesHandler({ ownerId: owner, groupId: fridayGroupId(otherOwner) });
+    expect(list).toBeNull();
+  });
+
+  it('returns null for an unknown Group id', async () => {
+    await seedFor(owner);
+    const list = await listMatchesHandler({ ownerId: owner, groupId: 'no-such-group' });
+    expect(list).toBeNull();
+  });
+
   it('filters to a single League when leagueId is supplied', async () => {
-    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
+    const seeded = await seedFor(owner);
     const target = seeded.leagues[0];
     if (!target) throw new Error('expected a seeded league');
 
-    const list = await listMatchesHandler({ ownerId: owner, leagueId: target.id });
+    const list = await listMatchesHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      leagueId: target.id,
+    });
+    if (list === null) throw new Error('expected the seeded group to resolve');
     expect(list.scope.leagueId).toBe(target.id);
     expect(list.matches.every((m) => m.leagueId === target.id)).toBe(true);
   });
 
-  it('silently drops a foreign leagueId (falls back to the cross-Group list)', async () => {
+  it('silently drops a leagueId outside the scoped Group (falls back to the Group-wide list)', async () => {
     // Materialise the other owner first, so they have at least one League.
-    const other = await getMatchCreateContextHandler({ ownerId: otherOwner });
+    const other = await seedFor(otherOwner);
     const foreign = other.leagues[0];
     if (!foreign) throw new Error('expected the other owner to have a league');
 
-    const list = await listMatchesHandler({ ownerId: owner, leagueId: foreign.id });
+    const list = await listMatchesHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      leagueId: foreign.id,
+    });
+    if (list === null) throw new Error('expected the seeded group to resolve');
     expect(list.scope.leagueId).toBeNull();
   });
 
-  it('surfaces leagueOptions for the in-page リーグセレクタ (#22)', async () => {
-    const seeded = await getMatchCreateContextHandler({ ownerId: owner });
-    const list = await listMatchesHandler({ ownerId: owner });
+  it('surfaces the scoped Group s Leagues as leagueOptions for the in-page リーグセレクタ', async () => {
+    const seeded = await seedFor(owner);
+    const list = await listMatchesHandler({ ownerId: owner, groupId: fridayGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
 
-    // Every owned League surfaces — including those without matches yet.
+    // Every League in the scoped Group surfaces — including those without
+    // matches yet. The create context already filters to this Group.
     expect(list.leagueOptions.map((o) => o.id).sort()).toEqual(
       seeded.leagues.map((l) => l.id).sort(),
     );
-    // Each option carries a non-empty Group label for chip disambiguation.
-    expect(list.leagueOptions.every((o) => o.groupName.length > 0)).toBe(true);
   });
 
-  it('does not leak foreign Leagues into leagueOptions (#22)', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
-    const otherSeed = await getMatchCreateContextHandler({ ownerId: otherOwner });
+  it('does not leak foreign Leagues into leagueOptions', async () => {
+    await seedFor(owner);
+    const otherSeed = await seedFor(otherOwner);
     const foreignIds = new Set(otherSeed.leagues.map((l) => l.id));
 
-    const list = await listMatchesHandler({ ownerId: owner });
+    const list = await listMatchesHandler({ ownerId: owner, groupId: fridayGroupId(owner) });
+    if (list === null) throw new Error('expected the seeded group to resolve');
     expect(list.leagueOptions.every((o) => !foreignIds.has(o.id))).toBe(true);
   });
 });
 
 describe('submitGameHandler', () => {
   it('creates a new Game with GameResult rows and recomputes the Match ranking', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -152,7 +203,11 @@ describe('submitGameHandler', () => {
 
     // Ranking now reflects two games. たかし still leads since both his
     // raw scores were the highest.
-    const detail = await getMatchDetailHandler({ ownerId: owner, matchId: match.id });
+    const detail = await getMatchDetailHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      matchId: match.id,
+    });
     expect(detail?.games).toHaveLength(2);
     expect(detail?.ranking[0]?.playerName).toBe('たかし');
     expect(detail?.ranking[0]?.gameCount).toBe(2);
@@ -160,7 +215,7 @@ describe('submitGameHandler', () => {
   });
 
   it('rejects raw score sums that do not match startingScore × players', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -186,7 +241,7 @@ describe('submitGameHandler', () => {
   });
 
   it('updates an existing Game (S12) and replaces its GameResult rows', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -211,7 +266,11 @@ describe('submitGameHandler', () => {
       ],
     });
 
-    const detail = await getMatchDetailHandler({ ownerId: owner, matchId: match.id });
+    const detail = await getMatchDetailHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      matchId: match.id,
+    });
     expect(detail?.games).toHaveLength(1);
     const top = detail?.ranking[0];
     expect(top?.playerName).toBe('なお');
@@ -219,7 +278,7 @@ describe('submitGameHandler', () => {
   });
 
   it('rejects cross-owner submissions', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
@@ -246,26 +305,34 @@ describe('submitGameHandler', () => {
 
 describe('deleteGameHandler', () => {
   it('removes the Game and its GameResult rows, then ranking goes empty', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const match = [...store.matches.values()].find((m) => m.name === '第 1 節');
     if (!match) throw new Error('expected seeded match');
     const game = [...store.games.values()].find((g) => g.matchId === match.id);
     if (!game) throw new Error('expected seeded game');
 
-    const before = await getMatchDetailHandler({ ownerId: owner, matchId: match.id });
+    const before = await getMatchDetailHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      matchId: match.id,
+    });
     expect(before?.ranking).toHaveLength(4);
 
     const { deleted } = await deleteGameHandler({ ownerId: owner, gameId: game.id });
     expect(deleted).toBe(true);
 
-    const after = await getMatchDetailHandler({ ownerId: owner, matchId: match.id });
+    const after = await getMatchDetailHandler({
+      ownerId: owner,
+      groupId: fridayGroupId(owner),
+      matchId: match.id,
+    });
     expect(after?.games).toHaveLength(0);
     expect(after?.ranking).toHaveLength(0);
   });
 
   it('rejects cross-owner deletes', async () => {
-    await getMatchCreateContextHandler({ ownerId: owner });
+    await seedFor(owner);
     const store = getGroupServerStore();
     const game = [...store.games.values()][0];
     if (!game) throw new Error('expected seeded game');

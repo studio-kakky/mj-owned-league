@@ -1,67 +1,25 @@
 /**
- * `/matches/$matchId` — S9 Match 詳細 + S11-S13 対局 CRUD
- * (`04-screens.md` § S9 / S11 / S12 / S13, Issue #19).
+ * `/matches/$matchId` — legacy redirect (Issue #61).
  *
- * Wiring strategy mirrors `/leagues/$leagueId` (Issue #18):
- *   - `getMatchDetailServerFn` → loader. Returns `null` for not-found /
- *     cross-Owner; we surface that as a redirect to the cross-Group list.
- *   - Game submit / delete are owned by callbacks on the screen. They go
- *     through `submitGameServerFn` / `deleteGameServerFn` and then
- *     `router.invalidate()` so the ranking / list re-renders without a
- *     manual refetch.
- *   - The presentational {@link MatchDetailScreen} hosts the S11 / S12 /
- *     S13 modals internally; this route file never sees the modal state.
+ * The Match 詳細 moved to `/groups/:groupId/matches/:matchId` so it shares the
+ * Group namespace with its list (S9). The old flat URL carries no groupId, so
+ * we cannot reconstruct the canonical detail path without a lookup; rather than
+ * add a round trip for a stale link, we bounce to the active Group's Match list
+ * (or `/groups` when no Group is active) and let the user re-open the Match from
+ * there.
  */
 
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router';
-import { useCallback } from 'react';
-import type { GameSubmitInput } from '../../components/matches';
-import { MatchDetailScreen } from '../../components/matches';
-import {
-  bridgeGameSubmit,
-  deleteGameServerFn,
-  getMatchDetailServerFn,
-  submitGameServerFn,
-} from '../../server/match-detail';
-
-const MatchDetailPage = () => {
-  const router = useRouter();
-  const { data } = Route.useLoaderData();
-
-  const handleSubmitGame = useCallback(
-    async (input: GameSubmitInput) => {
-      await submitGameServerFn({ data: bridgeGameSubmit(input) });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  const handleDeleteGame = useCallback(
-    async (gameId: string) => {
-      await deleteGameServerFn({ data: { gameId } });
-      await router.invalidate();
-    },
-    [router],
-  );
-
-  return (
-    <MatchDetailScreen
-      data={data}
-      onSubmitGame={handleSubmitGame}
-      onDeleteGame={handleDeleteGame}
-    />
-  );
-};
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_owner/matches/$matchId')({
-  loader: async ({ params }) => {
-    const data = await getMatchDetailServerFn({
-      data: { matchId: params.matchId },
-    });
-    if (data === null) {
-      throw redirect({ to: '/matches' });
+  beforeLoad: ({ context }) => {
+    const activeGroup = context.activeGroup;
+    if (activeGroup === null) {
+      throw redirect({ to: '/groups' });
     }
-    return { data };
+    throw redirect({
+      to: '/groups/$groupId/matches',
+      params: { groupId: activeGroup.id },
+    });
   },
-  component: MatchDetailPage,
 });

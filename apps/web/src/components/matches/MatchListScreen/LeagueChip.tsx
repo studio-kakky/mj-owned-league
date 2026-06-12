@@ -1,28 +1,21 @@
 import { Link } from '@tanstack/react-router';
 
 interface LeagueChipProps {
+  /** The Group the chip's list link is scoped to. */
+  groupId: string;
   label: string;
-  /** Optional second-line clarifier (Group name) when names collide. */
-  sublabel?: string | null;
   active: boolean;
-  href: '/matches';
-  /** When omitted, the chip links to `/matches` with no search (= すべて). */
+  /** When omitted, the chip links to the Group's list with no search (= すべて). */
   searchLeagueId?: string;
   testId: string;
 }
 
-export const LeagueChip = ({
-  label,
-  sublabel,
-  active,
-  href,
-  searchLeagueId,
-  testId,
-}: LeagueChipProps) => {
+export const LeagueChip = ({ groupId, label, active, searchLeagueId, testId }: LeagueChipProps) => {
   const search = searchLeagueId !== undefined ? { leagueId: searchLeagueId } : {};
   return (
     <Link
-      to={href}
+      to="/groups/$groupId/matches"
+      params={{ groupId }}
       search={search}
       data-testid={testId}
       aria-pressed={active}
@@ -33,7 +26,6 @@ export const LeagueChip = ({
       }`}
     >
       <span>{label}</span>
-      {sublabel ? <span className="text-[10px] text-zinc-500">/ {sublabel}</span> : null}
     </Link>
   );
 };
